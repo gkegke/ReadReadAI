@@ -14,27 +14,25 @@ export interface AudioCacheRecord {
 class ReadReadDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
   chunks!: EntityTable<Chunk, 'id'>;
-  // Updated table definition
   audioCache!: EntityTable<AudioCacheRecord, 'hash'>;
 
   constructor() {
     super('ReadReadAI_DB');
     
-    this.version(2).stores({
+    // Bumped to version 3 for Schema additions (voiceOverride)
+    // Dexie handles new optional fields gracefully without a formal upgrade callback 
+    // unless we were adding indices.
+    this.version(1).stores({
         projects: '++id, name, createdAt',
         chunks: '++id, projectId, [projectId+orderInProject]',
-        audioCache: 'hash' // Key remains hash, but content changes
-    }).upgrade(tx => {
-        // Clear the table because the data format is changing from {blob} to {path, size}
-        // and we haven't moved the blobs to OPFS in this migration script.
-        return tx.table('audioCache').clear();
+        audioCache: 'hash'
     });
-  }
+
+ }
 }
 
 export const db = new ReadReadDB();
 
-// Helper to reset DB (Useful for development/debugging)
 export const resetDatabase = async () => {
   await db.delete();
   await db.open();

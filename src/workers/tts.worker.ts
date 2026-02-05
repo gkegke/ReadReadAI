@@ -79,16 +79,18 @@ async function generate(id: string, text: string, config: ModelConfig, filepath:
             wavBlob = WavEncoder.encode(result.audio, result.sampleRate);
         }
 
-        try {
-            if (opfsRoot) {
-                // Use the centralized shared storage logic
+        if (opfsRoot) {
+            try {
                 await writeToHandle(opfsRoot, filepath, wavBlob);
+                // SUCCESS: Sent metadata only
                 reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size } });
-            } else {
+            } catch (storageErr) {
+                // FALLBACK: If OPFS write fails inside worker (rare but possible), send blob back
+                console.warn("[Worker] OPFS write failed, sending blob fallback", storageErr);
                 reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size, blob: wavBlob } });
             }
-        } catch (storageErr) {
-            console.warn("[Worker] OPFS write failed, sending blob fallback", storageErr);
+        } else {
+             // LEGACY/MEMORY MODE: Send blob back
             reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size, blob: wavBlob } });
         }
     } catch (e: any) {

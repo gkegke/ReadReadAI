@@ -1,10 +1,11 @@
 import * as pdfjsLib from 'pdfjs-dist';
+// @ts-expect-error - Vite specific import for worker
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { chunkText, hashText } from '../lib/text-processor';
 import type { Chunk } from '../types/schema';
 
-// Configure PDF.js worker
-// Using unpkg to avoid complex Vite build configurations for the worker file in MVP
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+// Configure PDF.js worker using local asset via Vite
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export interface ImportResult {
   fileName: string;
@@ -80,8 +81,6 @@ class ImportService {
       const page = await pdf.getPage(i);
       const textContent = await page.getTextContent();
       
-      // Join items with space, but preserve some structure if needed
-      // PDF extraction is often messy; this is a basic extraction
       const pageText = textContent.items
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .map((item: any) => item.str)

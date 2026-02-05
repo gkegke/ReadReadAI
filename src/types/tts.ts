@@ -1,8 +1,3 @@
-/**
- * Types definition for the Text-to-Speech Engine
- * and Web Worker communication.
- */
-
 export type TTSProvider = 'kokoro' | 'kitten' | 'dummy';
 
 export interface TTSModelDef {
@@ -11,7 +6,7 @@ export interface TTSModelDef {
   provider: TTSProvider;
   description: string;
   config?: {
-    dtype?: string; // For ONNX models (q4, q8, fp16)
+    dtype?: string;
   };
 }
 
@@ -52,10 +47,7 @@ export interface ModelConfig {
   lang: string;
 }
 
-// --- Worker Messages ---
-
 export type TTSWorkerRequest =
-  // Added rootHandle for OPFS handoff
   | { type: 'INIT_MODEL'; payload: { modelId: string; rootHandle?: FileSystemDirectoryHandle } }
   | { 
       type: 'GENERATE', 
@@ -75,6 +67,7 @@ export type TTSWorkerResponse =
       payload: { 
         id: string; 
         byteSize: number; 
+        // Blob is only returned if OPFS is unavailable in the Worker environment
         blob?: Blob; 
       } 
     }

@@ -1,13 +1,8 @@
 import { z } from 'zod';
 
 export const VoiceSettingsSchema = z.object({
-  // Changed default to 'af_heart' as it is the flagship voice for Kokoro
   voiceId: z.string().default('af_heart'),
   speed: z.number().min(0.5).max(2.0).default(1.0),
-  blend: z.object({
-    voiceId: z.string(),
-    weight: z.number().min(0).max(100)
-  }).optional()
 });
 
 export const ProjectSchema = z.object({
@@ -28,6 +23,14 @@ export const ChunkSchema = z.object({
   textContent: z.string(),
   cleanTextHash: z.string(), 
   status: ChunkStatusSchema.default('pending'),
+  
+  // Phase 3: Per-Cell Experimentation
+  // Allows this specific chunk to override project defaults
+  voiceOverride: z.object({
+    voiceId: z.string().optional(),
+    speed: z.number().optional(),
+  }).optional(),
+
   noteContent: z.string().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
