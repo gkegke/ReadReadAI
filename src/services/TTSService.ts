@@ -43,7 +43,6 @@ class TTSService {
             case 'INIT_SUCCESS':
               console.log(`[TTSService] Model ${msg.payload.modelId} ready.`);
               store.setStatus(ModelStatus.READY);
-              // Store the voices provided by the engine
               if (msg.payload.voices) {
                 store.setVoices(msg.payload.voices);
               }
@@ -58,9 +57,15 @@ class TTSService {
             case 'GENERATION_COMPLETE':
               if (this.pendingRequests.has(msg.payload.id)) {
                 const { resolve, filepath } = this.pendingRequests.get(msg.payload.id)!;
+                
+                // EPIC 4: Worker Centric Storage
+                // If the worker returns a blob, it means OPFS wasn't available inside the worker,
+                // so we fallback to Main Thread writing.
+                // Otherwise, we assume the worker wrote it successfully.
                 if (msg.payload.blob) {
                     await storage.saveFile(filepath, msg.payload.blob);
                 }
+                
                 resolve(msg.payload.byteSize);
                 this.pendingRequests.delete(msg.payload.id);
               }
@@ -88,6 +93,7 @@ class TTSService {
 
     let rootHandle: FileSystemDirectoryHandle | undefined = undefined;
     try {
+        // EPIC 4: Grab the raw handle to pass to worker
         const handle = await storage.getRootHandle();
         if (handle) rootHandle = handle;
     } catch (e) { /* ignore */ }

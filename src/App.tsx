@@ -1,7 +1,8 @@
 import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { StudioHeader } from './components/StudioHeader'
-import { useProjectStore, useProjects, useActiveProjectChunks } from './store/useProjectStore'
+import { useProjectStore } from './store/useProjectStore'
+import { useProjects } from './hooks/useQueries' // Fixed Import Path
 import { ttsService } from './services/TTSService'
 import { DemoService } from './services/DemoService'
 import { useTTSStore } from './store/useTTSStore'
@@ -12,23 +13,25 @@ import { Timeline } from './components/Timeline'
 import { PlayerControls } from './components/PlayerControls'
 import { usePlaybackEngine } from './hooks/usePlaybackEngine'
 import { storage } from './services/storage'
+import { jobQueueManager } from './services/JobQueueManager'
 
 function App() {
   const { activeProjectId } = useProjectStore();
-  const projects = useProjects();
+  const { data: projects } = useProjects(); // Updated for hook return signature
   const activeProject = projects?.find(p => p.id === activeProjectId);
-  const chunks = useActiveProjectChunks(activeProjectId);
   
   const { modelStatus, errorMessage } = useTTSStore();
   const { storageMode, activeModelId } = useSystemStore();
 
-  usePlaybackEngine(chunks);
+  usePlaybackEngine();
 
   useEffect(() => {
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
     }
     storage.init();
+    jobQueueManager.poke();
+
     if (modelStatus === ModelStatus.UNLOADED) {
       ttsService.loadModel(activeModelId);
     }
@@ -42,7 +45,6 @@ function App() {
       <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
         <StudioHeader />
 
-        {/* Global Notifications Area */}
         {storageMode === 'memory' && (
             <div className="bg-amber-500/10 text-amber-600 text-[10px] font-bold uppercase tracking-widest px-4 py-1 flex items-center justify-center gap-2 border-b border-amber-500/20">
                 <AlertTriangle className="w-3 h-3" />
@@ -56,10 +58,9 @@ function App() {
             </div>
         )}
 
-        {/* Main Workspace */}
         <div className="flex-1 min-h-0">
             {activeProject ? (
-                 <Timeline chunks={chunks || []} />
+                 <Timeline />
             ) : (
                 <div className="h-full flex flex-col items-center justify-center text-muted-foreground animate-in fade-in duration-700">
                     <div className="text-4xl mb-4">🎙️</div>

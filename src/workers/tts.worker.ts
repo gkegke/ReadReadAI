@@ -19,6 +19,7 @@ async function initModel(modelId: string, rootHandle?: FileSystemDirectoryHandle
     if (currentModelId === modelId || isInitializing) return;
     isInitializing = true;
     
+    // EPIC 4: Store the handle
     if (rootHandle) {
         opfsRoot = rootHandle;
         console.log("[Worker] OPFS Handle received.");
@@ -79,10 +80,11 @@ async function generate(id: string, text: string, config: ModelConfig, filepath:
             wavBlob = WavEncoder.encode(result.audio, result.sampleRate);
         }
 
+        // EPIC 4: Direct Write
         if (opfsRoot) {
             try {
                 await writeToHandle(opfsRoot, filepath, wavBlob);
-                // SUCCESS: Sent metadata only
+                // SUCCESS: Sent metadata only, no heavy blob
                 reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size } });
             } catch (storageErr) {
                 // FALLBACK: If OPFS write fails inside worker (rare but possible), send blob back

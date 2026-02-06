@@ -2,24 +2,21 @@ import React from 'react';
 import { useProjectStore } from '../store/useProjectStore';
 import { useTTSStore } from '../store/useTTSStore';
 import { useSystemStore } from '../store/useSystemStore';
+import { useGlobalJobStatus } from '../hooks/useQueries';
 import { AVAILABLE_MODELS, ModelStatus } from '../types/tts';
 import { ttsService } from '../services/TTSService';
-import { Loader2, Download, Cpu, User, Activity, HardDrive } from 'lucide-react';
+import { ProjectActions } from '../services/ProjectActions';
+import { Loader2, Download, Cpu, User, Activity, HardDrive, Layers } from 'lucide-react';
 import { db } from '../db';
 import { storage } from '../services/storage';
 
 export const StudioHeader: React.FC = () => {
-    const { activeProjectId, isExporting, exportProjectAudio } = useProjectStore();
+    const { activeProjectId, isExporting } = useProjectStore();
     const { modelStatus, availableVoices, progressPhase, progressPercent } = useTTSStore();
     const { activeModelId, setActiveModelId, storageMode } = useSystemStore();
     
-    // Project specific voice settings
-    const activeProject = useProjectStore((s) => {
-        // This is a bit of a hack to get the active project without useLiveQuery 
-        // to keep the header snappy. In a real app, project settings might 
-        // be mirrored in a simpler store.
-        return null; 
-    });
+    // Reactive Job Status from DB
+    const { isWorking, pendingCount } = useGlobalJobStatus();
 
     const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const newId = e.target.value;
@@ -84,6 +81,13 @@ export const StudioHeader: React.FC = () => {
                         {modelStatus === ModelStatus.LOADING ? `${progressPhase} ${progressPercent}%` : modelStatus}
                     </div>
 
+                    {isWorking && (
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-primary animate-pulse">
+                            <Layers className="w-3 h-3" />
+                            <span>PROCESSING {pendingCount}</span>
+                        </div>
+                    )}
+
                     <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                         <HardDrive className="w-3 h-3" />
                         <span className="uppercase font-bold tracking-widest">{storageMode}</span>
@@ -102,7 +106,7 @@ export const StudioHeader: React.FC = () => {
                             <Loader2 className="w-4 h-4" />
                         </button>
                         <button 
-                            onClick={() => exportProjectAudio(activeProjectId)}
+                            onClick={() => ProjectActions.exportProjectAudio(activeProjectId)}
                             disabled={isExporting}
                             className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-all"
                         >

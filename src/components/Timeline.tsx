@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChunkItem } from './ChunkItem';
 import { useAudioStore } from '../store/useAudioStore';
-import { useProjectStore, useActiveProjectChunkIds } from '../store/useProjectStore';
+import { useProjectStore } from '../store/useProjectStore';
+import { useProjectChunkIds } from '../hooks/useQueries';
 import { ProjectActions } from '../services/ProjectActions';
-import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso';
-import { Plus, Send, Upload } from 'lucide-react';
-import { generationManager } from '../services/GenerationManager'; // Added
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
+import { Plus, Send, Upload, Loader2 } from 'lucide-react';
 
 interface TimelineProps {
   header?: React.ReactNode; 
@@ -13,22 +13,44 @@ interface TimelineProps {
 
 export const Timeline: React.FC<TimelineProps> = ({ header }) => {
   const { activeChunkId } = useAudioStore();
-  const { activeProjectId, isProcessing } = useProjectStore();
+  const { activeProjectId } = useProjectStore();
   
-  // Optimized: Only subscribe to the list of IDs
-  const chunkIds = useActiveProjectChunkIds(activeProjectId);
+  // Optimized hook from useQueries
+  const { data: chunkIds, isLoading: isChunksLoading } = useProjectChunkIds(activeProjectId);
   
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputAreaRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState('');
+  
+  // Local loading state for import actions
+  const [isImporting, setIsImporting] = useState(false);
 
   const handleQuickAdd = async () => {
       if (!inputValue.trim()) return;
       const textToProcess = inputValue;
       setInputValue('');
-      await ProjectActions.importRawText(textToProcess);
-      inputAreaRef.current?.focus();
+      
+      setIsImporting(true);
+      try {
+          await ProjectActions.importRawText(textToProcess);
+      } finally {
+          setIsImporting(false);
+          inputAreaRef.current?.focus();
+      }
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.files?.[0]) {
+          setIsImporting(true);
+          try {
+              await ProjectActions.importDocument(e.target.files[0]);
+          } finally {
+              setIsImporting(false);
+              // Reset input so same file can be selected again if needed
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          }
+      }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -38,28 +60,29 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
       }
   };
 
-  // Pass visibility info to GenerationManager
-  const handleRangeChanged = (range: ListRange) => {
-      generationManager.updateVisibleRange(range.startIndex, range.endIndex);
-  };
-
   useEffect(() => {
     if (activeChunkId !== null && virtuosoRef.current && chunkIds) {
         const index = chunkIds.indexOf(activeChunkId);
         if (index !== -1) {
-            // "Virtuoso, please ensure the playing chunk is visible"
-            // We use a slight timeout to allow the layout to settle if it was a fresh load
             setTimeout(() => {
                 virtuosoRef.current?.scrollIntoView({ 
                     index, 
                     behavior: 'smooth', 
-                    align: 'center',
-                    done: () => {} // Callback when scrolling finished
+                    align: 'center'
                 });
             }, 50);
         }
     }
   }, [activeChunkId, chunkIds]);
+
+  if (isChunksLoading) {
+      return (
+          <div className="h-full flex flex-col items-center justify-center text-muted-foreground">
+              <Loader2 className="w-8 h-8 animate-spin mb-2" />
+              <p className="text-xs font-medium">Loading Project...</p>
+          </div>
+      );
+  }
 
   return (
     <div className="h-full w-full flex flex-col">
@@ -73,6 +96,7 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
                     onKeyDown={handleKeyDown}
                     placeholder="Type or paste text here... Press Cmd+Enter to turn into audio cells instantly."
                     className="w-full min-h-[80px] p-4 pb-12 rounded-xl border border-border bg-card text-lg font-serif resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 transition-all placeholder:text-muted-foreground/50"
+                    disabled={isImporting}
                 />
                 
                 <div className="absolute bottom-3 left-3 flex gap-2">
@@ -81,11 +105,12 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
                         accept=".txt,.pdf" 
                         className="hidden" 
                         ref={fileInputRef}
-                        onChange={(e) => e.target.files?.[0] && ProjectActions.importDocument(e.target.files[0])}
+                        onChange={handleFileUpload}
                     />
                     <button 
                         onClick={() => fileInputRef.current?.click()}
-                        className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors bg-secondary/50 rounded hover:bg-secondary"
+                        disabled={isImporting}
+                        className="flex items-center gap-1.5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground hover:text-primary transition-colors bg-secondary/50 rounded hover:bg-secondary disabled:opacity-50"
                     >
                         <Upload className="w-3 h-3" /> Import File
                     </button>
@@ -93,11 +118,11 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
 
                 <button 
                     onClick={handleQuickAdd}
-                    disabled={!inputValue.trim() || isProcessing}
+                    disabled={!inputValue.trim() || isImporting}
                     className="absolute bottom-3 right-3 flex items-center gap-2 px-4 py-1.5 bg-primary text-primary-foreground rounded-lg text-xs font-bold hover:scale-105 active:scale-95 disabled:opacity-0 transition-all shadow-md"
                     title="Create Cells (Cmd+Enter)"
                 >
-                    {isProcessing ? (
+                    {isImporting ? (
                         <Plus className="w-4 h-4 animate-spin" />
                     ) : (
                         <div className="flex items-center gap-1">
@@ -112,7 +137,6 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
         <Virtuoso
             ref={virtuosoRef}
             data={chunkIds || []}
-            rangeChanged={handleRangeChanged}
             components={{
                 Header: () => <div className="pt-4">{header}</div>,
                 Footer: () => <div className="h-48" />

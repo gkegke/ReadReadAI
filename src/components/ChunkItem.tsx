@@ -1,10 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useLiveQuery } from 'dexie-react-hooks';
-import { db } from '../db';
+import { useChunk, useProjectChunkIds } from '../hooks/useQueries';
 import { ProjectActions } from '../services/ProjectActions';
 import { useAudioStore } from '../store/useAudioStore';
 import { useTTSStore } from '../store/useTTSStore';
-import { useActiveProjectChunkIds } from '../store/useProjectStore';
 import { Edit2, Save, X, Split, Merge, PlayCircle, Loader2, AlertCircle, Download, Plus, Mic2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -15,11 +13,11 @@ interface ChunkItemProps {
 }
 
 export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isLast, isActive }) => {
-  const chunk = useLiveQuery(() => db.chunks.get(chunkId), [chunkId]);
+  const { data: chunk, isLoading } = useChunk(chunkId);
   
   const { setActiveChunkId, isPlaying, setIsPlaying, setQueue } = useAudioStore();
   const { availableVoices } = useTTSStore();
-  const allChunkIds = useActiveProjectChunkIds(chunk?.projectId || null);
+  const { data: allChunkIds } = useProjectChunkIds(chunk?.projectId || null);
   
   const [isEditing, setIsEditing] = useState(false);
   const [isInserting, setIsInserting] = useState(false);
@@ -37,11 +35,10 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isLast, isActive 
       if (isInserting && insertInputRef.current) insertInputRef.current.focus();
   }, [isInserting]);
 
-  if (!chunk) return <div className="h-24 animate-pulse bg-secondary/20 rounded-md my-2" />;
+  if (isLoading || !chunk) return <div className="h-24 animate-pulse bg-secondary/20 rounded-md my-2" />;
 
   const handleSave = async () => {
     if (editText.trim() !== chunk.textContent) {
-      // Logic Update: updateChunkText automatically queues generation now.
       await ProjectActions.updateChunkText(chunk.id!, editText.trim());
     }
     setIsEditing(false);
@@ -132,12 +129,10 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isLast, isActive 
             </div>
         ) : (
             <>
-                {/* Content */}
                 <p className={cn("text-lg leading-relaxed font-serif cursor-pointer transition-opacity relative z-10", isActive ? "text-foreground font-medium" : "text-foreground/80 hover:text-foreground", isProcessing && "opacity-70")} onClick={() => !isProcessing && setIsEditing(true)}>
                     {chunk.textContent}
                 </p>
 
-                {/* Footer Controls */}
                 <div className="flex items-center justify-between mt-3 h-6 relative z-10">
                     <div className="flex items-center gap-3">
                          {isProcessing ? (

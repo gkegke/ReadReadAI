@@ -3,7 +3,6 @@ import { getDirHandle, writeToHandle, readFromHandle } from '../../lib/storage-s
 
 /**
  * Implementation of StorageService using the Origin Private File System (OPFS).
- * Refactored to use shared storage logic.
  */
 export class OpfsStorageService implements StorageService {
   private root: FileSystemDirectoryHandle | null = null;

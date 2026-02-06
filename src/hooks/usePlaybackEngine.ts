@@ -2,11 +2,16 @@ import { useEffect, useRef } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
 import { db } from '../db';
 import { storage } from '../services/storage';
-import type { Chunk } from '../types/schema';
 import { AudioScheduler } from '../lib/audio-scheduler';
-import { generationManager } from '../services/GenerationManager';
+import { ProjectActions } from '../services/ProjectActions';
 
-export const usePlaybackEngine = (chunks: Chunk[] | undefined) => {
+/**
+ * usePlaybackEngine
+ * 
+ * Now self-sufficient. It monitors the activeChunkId from Zustand 
+ * and fetches the necessary metadata directly from Dexie.
+ */
+export const usePlaybackEngine = () => {
   const { 
     activeChunkId, isPlaying, playbackSpeed, queue,
     setIsPlaying, playNext, setTime 
@@ -17,61 +22,67 @@ export const usePlaybackEngine = (chunks: Chunk[] | undefined) => {
   useEffect(() => {
     const scheduler = new AudioScheduler();
     schedulerRef.current = scheduler;
-    scheduler.setHandlers(() => playNext(), (t, d) => setTime(t, d));
+    
+    scheduler.setHandlers(
+        () => playNext(), 
+        (t) => setTime(t, 0)
+    );
+    
     return () => scheduler.destroy();
   }, [playNext, setTime]); 
 
   useEffect(() => {
       const s = schedulerRef.current;
       if (!s) return;
+      if (!isPlaying) s.stop();
       s.setSpeed(playbackSpeed);
-      if (isPlaying) s.resume();
-      else s.pause();
   }, [isPlaying, playbackSpeed]);
 
   useEffect(() => {
       const s = schedulerRef.current;
-      if (!s || !activeChunkId || !chunks) return;
+      if (!s || !activeChunkId || !isPlaying) return;
 
-      const currentChunk = chunks.find(c => c.id === activeChunkId);
-      if (!currentChunk) return;
+      const loadAndPlay = async () => {
+          // Fetch chunk data directly
+          const currentChunk = await db.chunks.get(activeChunkId);
+          if (!currentChunk) return;
 
-      const loadCurrent = async () => {
-          if (s.activeHash === currentChunk.cleanTextHash) return; 
-
-          // Access table securely to avoid 'undefined property' issues on startup
-          const cachedMeta = await db.table('audioCache').get(currentChunk.cleanTextHash);
+          const cachedMeta = await db.audioCache.get(currentChunk.cleanTextHash);
           
           if (cachedMeta) {
               try {
                 const blob = await storage.readFile(cachedMeta.path);
-                await s.playImmediate(blob, currentChunk.cleanTextHash, playbackSpeed);
-                if (!isPlaying) setIsPlaying(true);
+                await s.playImmediate(blob, playbackSpeed);
               } catch (e) {
-                  // File missing? Queue regeneration.
-                  generationManager.queue(activeChunkId);
+                  ProjectActions.generateChunkAudio(activeChunkId);
+                  setIsPlaying(false);
+              }
+          } else {
+              // If not generated, trigger it (Manager will handle priority)
+              if(currentChunk.status === 'pending' || currentChunk.status === 'failed_tts') {
+                   ProjectActions.generateChunkAudio(activeChunkId);
               }
           }
       };
 
-      const preload = async () => {
+      loadAndPlay();
+      
+      // OPTIONAL: Preload Logic
+      const preloadNext = async () => {
           const idx = queue.indexOf(activeChunkId);
-          if (idx === -1 || idx >= queue.length - 1) return;
-          const nextId = queue[idx + 1];
-          const nextChunk = chunks.find(c => c.id === nextId);
-          
-          if (nextChunk?.status === 'generated') {
-               const cachedMeta = await db.table('audioCache').get(nextChunk.cleanTextHash);
-               if (cachedMeta) {
-                   try {
-                       const blob = await storage.readFile(cachedMeta.path);
-                       s.preloadNext(blob, nextChunk.cleanTextHash);
-                   } catch (e) {}
-               }
+          if (idx !== -1 && idx < queue.length - 1) {
+              const nextId = queue[idx + 1];
+              const nextChunk = await db.chunks.get(nextId);
+              if (nextChunk) {
+                  const cached = await db.audioCache.get(nextChunk.cleanTextHash);
+                  if (cached) {
+                      // Triggering a read-to-memory cache could be done here
+                      // For now, AudioContext decoding is fast enough on-demand
+                  }
+              }
           }
       };
+      preloadNext();
 
-      loadCurrent();
-      preload();
-  }, [activeChunkId, chunks, queue, playbackSpeed, isPlaying, setIsPlaying]); 
+  }, [activeChunkId, isPlaying, playbackSpeed, queue, setIsPlaying]); 
 };

@@ -1,18 +1,21 @@
 import React, { useState } from 'react';
-import { useProjects, useProjectStore } from '../store/useProjectStore';
-import { Plus, Trash2, FileText, ChevronRight } from 'lucide-react';
+import { useProjectStore } from '../store/useProjectStore';
+import { useProjects } from '../hooks/useQueries';
+import { ProjectActions } from '../services/ProjectActions';
+import { Plus, Trash2, FileText, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
 export const Sidebar: React.FC = () => {
-  const projects = useProjects();
-  const { activeProjectId, setActiveProject, createProject, deleteProject } = useProjectStore();
+  const { data: projects, isLoading } = useProjects();
+  const { activeProjectId, setActiveProject } = useProjectStore();
+  
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
-    await createProject(newProjectName);
+    await ProjectActions.createProject(newProjectName);
     setNewProjectName('');
     setIsCreating(false);
   };
@@ -48,7 +51,11 @@ export const Sidebar: React.FC = () => {
             </form>
           )}
 
-          {projects?.map((project) => (
+          {isLoading ? (
+             <div className="px-3 py-4 flex justify-center">
+                 <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+             </div>
+          ) : projects.map((project) => (
             <div
               key={project.id}
               className={cn(
@@ -69,7 +76,7 @@ export const Sidebar: React.FC = () => {
                 <button
                     onClick={(e) => {
                     e.stopPropagation();
-                    if(confirm('Delete project?')) deleteProject(project.id!);
+                    if(confirm('Delete project?')) ProjectActions.deleteProject(project.id!);
                     }}
                     className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
                 >
@@ -83,7 +90,7 @@ export const Sidebar: React.FC = () => {
         <div className="p-4 border-t border-border bg-secondary/10">
             <div className="flex flex-col gap-1">
                 <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Version</div>
-                <div className="text-[10px] font-mono opacity-50">v0.7.0 (Studio Beta)</div>
+                <div className="text-[10px] font-mono opacity-50">v0.7.5 (Reactive)</div>
             </div>
         </div>
     </aside>

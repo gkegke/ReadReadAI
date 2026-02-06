@@ -16,21 +16,15 @@ export const ProjectSchema = z.object({
 
 export const ChunkStatusSchema = z.enum(['pending', 'processing', 'generated', 'failed_tts']);
 
-// EPIC 1: New Entity for managing generated files (Takes)
 export const AudioAssetSchema = z.object({
   id: z.number().optional(),
-  
-  // The Signature: These 4 fields define uniqueness
-  textHash: z.string(), // Hashed text for quick lookup
+  textHash: z.string(), 
   voiceId: z.string(),
   speed: z.number(),
   modelId: z.string(),
-
-  // File Metadata
-  filePath: z.string(), // OPFS path
+  filePath: z.string(), 
   byteSize: z.number(),
-  durationMs: z.number().optional(), // Future proofing
-  
+  durationMs: z.number().optional(), 
   createdAt: z.date(),
 });
 
@@ -39,20 +33,26 @@ export const ChunkSchema = z.object({
   projectId: z.number(),
   orderInProject: z.number(),
   textContent: z.string(),
-  
   status: ChunkStatusSchema.default('pending'),
-  
-  // EPIC 1: Link to the specific audio take currently selected
   activeAssetId: z.number().nullable().optional(), 
-
   voiceOverride: z.object({
     voiceId: z.string().optional(),
     speed: z.number().optional(),
   }).optional(),
-
   noteContent: z.string().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
+});
+
+// --- NEW JOB SCHEMA ---
+export const JobSchema = z.object({
+    id: z.number().optional(),
+    chunkId: z.number(),
+    projectId: z.number(),
+    status: z.enum(['pending', 'processing', 'failed']),
+    priority: z.number().default(0), // Higher = sooner
+    retryCount: z.number().default(0),
+    createdAt: z.date(),
 });
 
 export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>;
@@ -60,3 +60,4 @@ export type Project = z.infer<typeof ProjectSchema>;
 export type Chunk = z.infer<typeof ChunkSchema>;
 export type ChunkStatus = z.infer<typeof ChunkStatusSchema>;
 export type AudioAsset = z.infer<typeof AudioAssetSchema>;
+export type Job = z.infer<typeof JobSchema>;
