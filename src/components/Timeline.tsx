@@ -3,11 +3,11 @@ import { ChunkItem } from './ChunkItem';
 import { useAudioStore } from '../store/useAudioStore';
 import { useProjectStore, useActiveProjectChunkIds } from '../store/useProjectStore';
 import { ProjectActions } from '../services/ProjectActions';
-import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
-import { Plus, Send, Upload, Command } from 'lucide-react';
+import { Virtuoso, type VirtuosoHandle, type ListRange } from 'react-virtuoso';
+import { Plus, Send, Upload } from 'lucide-react';
+import { generationManager } from '../services/GenerationManager'; // Added
 
 interface TimelineProps {
-  // chunks prop removed, using internal ID hook
   header?: React.ReactNode; 
 }
 
@@ -38,11 +38,25 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
       }
   };
 
+  // Pass visibility info to GenerationManager
+  const handleRangeChanged = (range: ListRange) => {
+      generationManager.updateVisibleRange(range.startIndex, range.endIndex);
+  };
+
   useEffect(() => {
     if (activeChunkId !== null && virtuosoRef.current && chunkIds) {
         const index = chunkIds.indexOf(activeChunkId);
         if (index !== -1) {
-            virtuosoRef.current.scrollIntoView({ index, behavior: 'smooth', align: 'center' });
+            // "Virtuoso, please ensure the playing chunk is visible"
+            // We use a slight timeout to allow the layout to settle if it was a fresh load
+            setTimeout(() => {
+                virtuosoRef.current?.scrollIntoView({ 
+                    index, 
+                    behavior: 'smooth', 
+                    align: 'center',
+                    done: () => {} // Callback when scrolling finished
+                });
+            }, 50);
         }
     }
   }, [activeChunkId, chunkIds]);
@@ -98,6 +112,7 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
         <Virtuoso
             ref={virtuosoRef}
             data={chunkIds || []}
+            rangeChanged={handleRangeChanged}
             components={{
                 Header: () => <div className="pt-4">{header}</div>,
                 Footer: () => <div className="h-48" />

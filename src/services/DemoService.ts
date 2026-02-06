@@ -1,6 +1,7 @@
 import { db } from '../db';
 import { useProjectStore } from '../store/useProjectStore';
 import { hashText } from '../lib/text-processor';
+import { ProjectActions } from './ProjectActions';
 
 const DEMO_CONTENT = [
     "Welcome to ReadReadAI! This is a fully offline, browser-based text-to-speech application.",
@@ -47,12 +48,11 @@ export const DemoService = {
         useProjectStore.getState().setActiveProject(projectId);
         
         // 4. Trigger Audio Generation for the first chunk to ensure immediate delight
-        // We delay slightly to ensure the store subscription updates
         setTimeout(() => {
-             const { generateChunkAudio } = useProjectStore.getState();
              db.chunks.where({ projectId }).first().then(chunk => {
                  if(chunk && chunk.id) {
-                     generateChunkAudio(chunk.id);
+                     // Updated: Use ProjectActions Facade
+                     ProjectActions.generateChunkAudio(chunk.id);
                  }
              });
         }, 1000);

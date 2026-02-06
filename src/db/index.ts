@@ -19,15 +19,19 @@ class ReadReadDB extends Dexie {
   constructor() {
     super('ReadReadAI_DB');
     
-    // Bumped to version 3 for Schema additions (voiceOverride)
-    // Dexie handles new optional fields gracefully without a formal upgrade callback 
-    // unless we were adding indices.
+    // VERSION 1: Initial Schema
     this.version(1).stores({
+        projects: '++id, name, createdAt',
+        chunks: '++id, projectId, [projectId+orderInProject]',
+    });
+
+    // VERSION 2: Added Audio Cache
+    // This ensures existing users get the new table
+    this.version(2).stores({
         projects: '++id, name, createdAt',
         chunks: '++id, projectId, [projectId+orderInProject]',
         audioCache: 'hash'
     });
-
  }
 }
 

@@ -4,21 +4,13 @@ import { storage } from './storage';
 
 /**
  * Service responsible for packaging project assets into exportable formats.
- * Handles the bridge between IDB metadata, OPFS binary data, and JSZip.
  */
 class ExportService {
     
-    /**
-     * Packages all generated audio files for a project into a ZIP file.
-     * 
-     * @param projectId - The ID of the project to export
-     * @returns Promise<Blob> - The generated ZIP file as a Blob
-     */
     async exportProjectAudio(projectId: number): Promise<{ blob: Blob, filename: string } | null> {
         const project = await db.projects.get(projectId);
         if (!project) throw new Error("Project not found");
 
-        // 1. Fetch chunks in order
         const chunks = await db.chunks
             .where('projectId')
             .equals(projectId)
@@ -36,21 +28,16 @@ class ExportService {
 
         let filesAdded = 0;
 
-        // 2. Iterate chunks and gather audio
         for (const chunk of chunks) {
-            if (chunk.status !== 'generated') continue;
+            // EPIC 1: Check active asset linkage
+            if (!chunk.activeAssetId) continue;
 
-            const cachedMeta = await db.audioCache.get(chunk.cleanTextHash);
+            const asset = await db.assets.get(chunk.activeAssetId);
             
-            if (cachedMeta) {
+            if (asset) {
                 try {
-                    // 3. Read binary from OPFS
-                    // Note: In a production app with huge projects, we might want to do this 
-                    // concurrently with P-Limit or similar, but for sequential ordering simplicity:
-                    const blob = await storage.readFile(cachedMeta.path);
+                    const blob = await storage.readFile(asset.filePath);
                     
-                    // 4. Create a human-friendly filename
-                    // Format: "001 - Start of the sentence... .wav"
                     const orderPrefix = (chunk.orderInProject + 1).toString().padStart(3, '0');
                     const textSnippet = this.sanitizeFilename(chunk.textContent.slice(0, 30));
                     const fileName = `${orderPrefix} - ${textSnippet}.wav`;
@@ -67,7 +54,6 @@ class ExportService {
             return null;
         }
 
-        // 5. Generate ZIP
         const content = await zip.generateAsync({ type: 'blob' });
         
         return {

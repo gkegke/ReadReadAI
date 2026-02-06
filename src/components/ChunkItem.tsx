@@ -15,7 +15,6 @@ interface ChunkItemProps {
 }
 
 export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isLast, isActive }) => {
-  // Isolated data fetching
   const chunk = useLiveQuery(() => db.chunks.get(chunkId), [chunkId]);
   
   const { setActiveChunkId, isPlaying, setIsPlaying, setQueue } = useAudioStore();
@@ -42,8 +41,8 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isLast, isActive 
 
   const handleSave = async () => {
     if (editText.trim() !== chunk.textContent) {
+      // Logic Update: updateChunkText automatically queues generation now.
       await ProjectActions.updateChunkText(chunk.id!, editText.trim());
-      ProjectActions.generateChunkAudio(chunk.id!); 
     }
     setIsEditing(false);
   };

@@ -1,34 +1,23 @@
 import { useEffect, useRef } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
-import { useProjectStore } from '../store/useProjectStore';
 import { db } from '../db';
 import { storage } from '../services/storage';
 import type { Chunk } from '../types/schema';
 import { AudioScheduler } from '../lib/audio-scheduler';
+import { generationManager } from '../services/GenerationManager';
 
-/**
- * usePlaybackEngine
- * 
- * Manages the AudioScheduler and syncs it with the Zustand Audio Store.
- */
 export const usePlaybackEngine = (chunks: Chunk[] | undefined) => {
   const { 
     activeChunkId, isPlaying, playbackSpeed, queue,
     setIsPlaying, playNext, setTime 
   } = useAudioStore();
   
-  const { generateChunkAudio } = useProjectStore();
   const schedulerRef = useRef<AudioScheduler | null>(null);
   
   useEffect(() => {
     const scheduler = new AudioScheduler();
     schedulerRef.current = scheduler;
-
-    scheduler.setHandlers(
-        () => playNext(),
-        (t, d) => setTime(t, d)
-    );
-
+    scheduler.setHandlers(() => playNext(), (t, d) => setTime(t, d));
     return () => scheduler.destroy();
   }, [playNext, setTime]); 
 
@@ -48,19 +37,19 @@ export const usePlaybackEngine = (chunks: Chunk[] | undefined) => {
       if (!currentChunk) return;
 
       const loadCurrent = async () => {
-          // Use public API to avoid redundant playback commands on gapless swaps
-          if (s.activeHash === currentChunk.cleanTextHash) {
-              return; 
-          }
+          if (s.activeHash === currentChunk.cleanTextHash) return; 
 
-          const cachedMeta = await db.audioCache.get(currentChunk.cleanTextHash);
+          // Access table securely to avoid 'undefined property' issues on startup
+          const cachedMeta = await db.table('audioCache').get(currentChunk.cleanTextHash);
+          
           if (cachedMeta) {
-              const blob = await storage.readFile(cachedMeta.path);
-              await s.playImmediate(blob, currentChunk.cleanTextHash, playbackSpeed);
-              if (!isPlaying) setIsPlaying(true);
-          } else {
-              if (currentChunk.status !== 'generated' && currentChunk.status !== 'processing') {
-                  generateChunkAudio(currentChunk.id!);
+              try {
+                const blob = await storage.readFile(cachedMeta.path);
+                await s.playImmediate(blob, currentChunk.cleanTextHash, playbackSpeed);
+                if (!isPlaying) setIsPlaying(true);
+              } catch (e) {
+                  // File missing? Queue regeneration.
+                  generationManager.queue(activeChunkId);
               }
           }
       };
@@ -68,25 +57,21 @@ export const usePlaybackEngine = (chunks: Chunk[] | undefined) => {
       const preload = async () => {
           const idx = queue.indexOf(activeChunkId);
           if (idx === -1 || idx >= queue.length - 1) return;
-          
           const nextId = queue[idx + 1];
           const nextChunk = chunks.find(c => c.id === nextId);
           
-          if (!nextChunk) return;
-
-          if (nextChunk.status === 'pending') {
-              generateChunkAudio(nextChunk.id!);
-          } else if (nextChunk.status === 'generated') {
-               const cachedMeta = await db.audioCache.get(nextChunk.cleanTextHash);
+          if (nextChunk?.status === 'generated') {
+               const cachedMeta = await db.table('audioCache').get(nextChunk.cleanTextHash);
                if (cachedMeta) {
-                   const blob = await storage.readFile(cachedMeta.path);
-                   s.preloadNext(blob, nextChunk.cleanTextHash);
+                   try {
+                       const blob = await storage.readFile(cachedMeta.path);
+                       s.preloadNext(blob, nextChunk.cleanTextHash);
+                   } catch (e) {}
                }
           }
       };
 
       loadCurrent();
       preload();
-
-  }, [activeChunkId, chunks, queue, playbackSpeed, generateChunkAudio, isPlaying, setIsPlaying]); 
+  }, [activeChunkId, chunks, queue, playbackSpeed, isPlaying, setIsPlaying]); 
 };
