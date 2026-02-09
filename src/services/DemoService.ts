@@ -1,7 +1,7 @@
 import { db } from '../db';
 import { useProjectStore } from '../store/useProjectStore';
 import { hashText } from '../lib/text-processor';
-import { ProjectActions } from './ProjectActions';
+import { ProjectRepository } from '../repositories/ProjectRepository';
 
 const DEMO_CONTENT = [
     "Welcome to ReadReadAI! This is a fully offline, browser-based text-to-speech application.",
@@ -13,17 +13,12 @@ const DEMO_CONTENT = [
 ];
 
 export const DemoService = {
-    /**
-     * Checks if the database is empty (no projects).
-     * If so, creates a Welcome project and populates it with chunks.
-     */
     async checkAndCreateDemoProject() {
         const count = await db.projects.count();
         if (count > 0) return;
 
         console.log("Initializing Demo Project...");
 
-        // 1. Create Project
         const projectId = await db.projects.add({
             name: "Welcome to ReadReadAI",
             createdAt: new Date(),
@@ -31,7 +26,6 @@ export const DemoService = {
             voiceSettings: { voiceId: 'af_sarah', speed: 1.0 }
         });
 
-        // 2. Create Chunks
         const chunks = DEMO_CONTENT.map((text, index) => ({
             projectId,
             orderInProject: index,
@@ -43,16 +37,12 @@ export const DemoService = {
         }));
 
         await db.chunks.bulkAdd(chunks);
-        
-        // 3. Set Active
         useProjectStore.getState().setActiveProject(projectId);
         
-        // 4. Trigger Audio Generation for the first chunk to ensure immediate delight
         setTimeout(() => {
              db.chunks.where({ projectId }).first().then(chunk => {
                  if(chunk && chunk.id) {
-                     // Updated: Use ProjectActions Facade
-                     ProjectActions.generateChunkAudio(chunk.id);
+                     ProjectRepository.generateChunkAudio(chunk.id);
                  }
              });
         }, 1000);

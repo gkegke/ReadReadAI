@@ -1,88 +1,39 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useAudioStore } from '../store/useAudioStore';
-import { db } from '../db';
-import { storage } from '../services/storage';
-import { AudioScheduler } from '../lib/audio-scheduler';
-import { ProjectActions } from '../services/ProjectActions';
+import { ProjectRepository } from '../repositories/ProjectRepository';
 
 /**
- * usePlaybackEngine
- * 
- * Now self-sufficient. It monitors the activeChunkId from Zustand 
- * and fetches the necessary metadata directly from Dexie.
+ * The "DJ" Engine.
+ * Responsibilities:
+ * 1. Ensure current chunk audio exists (Just-in-time generation).
+ * 2. Pre-fetch/Pre-generate the NEXT chunk for gapless playback.
  */
 export const usePlaybackEngine = () => {
-  const { 
-    activeChunkId, isPlaying, playbackSpeed, queue,
-    setIsPlaying, playNext, setTime 
-  } = useAudioStore();
-  
-  const schedulerRef = useRef<AudioScheduler | null>(null);
+  const { activeChunkId, isPlaying } = useAudioStore();
   
   useEffect(() => {
-    const scheduler = new AudioScheduler();
-    schedulerRef.current = scheduler;
-    
-    scheduler.setHandlers(
-        () => playNext(), 
-        (t) => setTime(t, 0)
-    );
-    
-    return () => scheduler.destroy();
-  }, [playNext, setTime]); 
+      // If nothing is selected, we don't care.
+      if (!activeChunkId) return;
 
-  useEffect(() => {
-      const s = schedulerRef.current;
-      if (!s) return;
-      if (!isPlaying) s.stop();
-      s.setSpeed(playbackSpeed);
-  }, [isPlaying, playbackSpeed]);
+      const engineCycle = async () => {
+          // 1. Handle Current Chunk
+          // If we hit play on a text block, generate it now.
+          if (isPlaying) {
+              await ProjectRepository.generateChunkAudio(activeChunkId, 100);
+          }
 
-  useEffect(() => {
-      const s = schedulerRef.current;
-      if (!s || !activeChunkId || !isPlaying) return;
-
-      const loadAndPlay = async () => {
-          // Fetch chunk data directly
-          const currentChunk = await db.chunks.get(activeChunkId);
-          if (!currentChunk) return;
-
-          const cachedMeta = await db.audioCache.get(currentChunk.cleanTextHash);
+          // 2. Proactive Lookahead (The "DJ" Pre-fetch)
+          // Regardless of play state (but definitely if playing), 
+          // ensure the NEXT chunk is ready to go.
+          const nextChunk = await ProjectRepository.getNextChunk(activeChunkId);
           
-          if (cachedMeta) {
-              try {
-                const blob = await storage.readFile(cachedMeta.path);
-                await s.playImmediate(blob, playbackSpeed);
-              } catch (e) {
-                  ProjectActions.generateChunkAudio(activeChunkId);
-                  setIsPlaying(false);
-              }
-          } else {
-              // If not generated, trigger it (Manager will handle priority)
-              if(currentChunk.status === 'pending' || currentChunk.status === 'failed_tts') {
-                   ProjectActions.generateChunkAudio(activeChunkId);
-              }
+          if (nextChunk) {
+               // Trigger generation with Higher priority than random background jobs
+               // but slightly lower than the currently playing one.
+               await ProjectRepository.ensureChunkAudio(nextChunk.id!);
           }
       };
 
-      loadAndPlay();
-      
-      // OPTIONAL: Preload Logic
-      const preloadNext = async () => {
-          const idx = queue.indexOf(activeChunkId);
-          if (idx !== -1 && idx < queue.length - 1) {
-              const nextId = queue[idx + 1];
-              const nextChunk = await db.chunks.get(nextId);
-              if (nextChunk) {
-                  const cached = await db.audioCache.get(nextChunk.cleanTextHash);
-                  if (cached) {
-                      // Triggering a read-to-memory cache could be done here
-                      // For now, AudioContext decoding is fast enough on-demand
-                  }
-              }
-          }
-      };
-      preloadNext();
-
-  }, [activeChunkId, isPlaying, playbackSpeed, queue, setIsPlaying]); 
+      engineCycle();
+  }, [activeChunkId, isPlaying]); 
 };

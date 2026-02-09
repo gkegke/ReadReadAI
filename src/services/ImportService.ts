@@ -1,9 +1,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
-import { chunkText, hashText } from '../lib/text-processor';
+import { chunkText } from '../lib/text-processor';
 import type { Chunk } from '../types/schema';
 
-// EPIC 2: Offline - Use local worker instead of CDN/Import URL
-// The worker file is copied to /pdf-worker/pdf.worker.min.mjs via vite-plugin-static-copy
 pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf-worker/pdf.worker.min.mjs';
 
 export interface ImportResult {
@@ -25,28 +23,28 @@ class ImportService {
 
     return {
       fileName: file.name,
-      chunks: this.createChunks(fullText, projectId)
+      chunks: await this.createChunks(fullText, projectId)
     };
   }
 
   async importText(text: string, projectId: number): Promise<ImportResult> {
       return {
           fileName: 'Direct Input',
-          chunks: this.createChunks(text, projectId)
+          chunks: await this.createChunks(text, projectId)
       };
   }
 
-  private createChunks(text: string, projectId: number): Omit<Chunk, 'id'>[] {
-    const rawChunks = chunkText(text);
+  // Updated to be Async to support LangChain
+  private async createChunks(text: string, projectId: number): Promise<Omit<Chunk, 'id'>[]> {
+    const rawChunks = await chunkText(text); // Awaited LangChain splitter
     const now = new Date();
     
     return rawChunks.map((chunkText, index) => ({
       projectId,
       orderInProject: index,
       textContent: chunkText,
-      // EPIC 1: Status is pending until we link an asset
       status: 'pending' as const, 
-      activeAssetId: null, // New Field
+      activeAssetId: null,
       noteContent: null,
       createdAt: now,
       updatedAt: now

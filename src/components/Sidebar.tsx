@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProjects } from '../hooks/useQueries';
-import { ProjectActions } from '../services/ProjectActions';
+import { ProjectRepository } from '../repositories/ProjectRepository';
 import { Plus, Trash2, FileText, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -15,7 +15,7 @@ export const Sidebar: React.FC = () => {
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProjectName.trim()) return;
-    await ProjectActions.createProject(newProjectName);
+    await ProjectRepository.createProject(newProjectName);
     setNewProjectName('');
     setIsCreating(false);
   };
@@ -76,7 +76,7 @@ export const Sidebar: React.FC = () => {
                 <button
                     onClick={(e) => {
                     e.stopPropagation();
-                    if(confirm('Delete project?')) ProjectActions.deleteProject(project.id!);
+                    if(confirm('Delete project?')) ProjectRepository.deleteProject(project.id!);
                     }}
                     className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
                 >

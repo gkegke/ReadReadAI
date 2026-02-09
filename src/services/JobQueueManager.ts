@@ -1,93 +1,124 @@
 import { db } from '../db';
 import { AudioGenerationService } from './AudioGenerationService';
+import { liveQuery } from 'dexie';
 
 /**
  * JobQueueManager
  * 
- * Responsible for processing the persistent job queue in Dexie.
- * Ensures that if the user closes the tab, the work resumes when they return.
+ * REACTIVE & CONCURRENTLY SAFE:
+ * Uses Dexie liveQuery to observe the DB.
+ * Uses Web Locks API to ensure only ONE tab/worker acts as the processor.
  */
 class JobQueueManager {
-    private isProcessing = false;
-    private timer: ReturnType<typeof setTimeout> | null = null;
-    private CONCURRENCY = 1; // Keep to 1 for now to prevent worker overload
+    private subscription: { unsubscribe: () => void } | null = null;
+    private isLocked = false;
 
     constructor() {
-        // Start polling loop
-        this.poke();
+        this.init();
+    }
+
+    private init() {
+        // Observe the queue for ANY pending work
+        const pendingJobQuery = liveQuery(() => 
+            db.jobs
+                .where('status')
+                .equals('pending')
+                .count()
+        );
+
+        this.subscription = pendingJobQuery.subscribe({
+            next: (count) => {
+                if (count > 0 && !this.isLocked) {
+                    this.attemptProcess();
+                }
+            },
+            error: (err) => console.error("[JobQueue] Subscription error:", err)
+        });
+
+        // Cleanup stale jobs on boot
+        this.cleanupStuckJobs();
     }
 
     /**
-     * "Poke" the manager to check for work.
-     * Call this when adding new jobs to ensure immediate pickup.
+     * Uses the Web Locks API to elect a leader to process the queue.
+     * If another tab is holding the lock, this request will wait (or abort based on options).
+     * We use 'ifAvailable' mode so we don't block; we just try again on next DB change.
      */
-    public poke() {
-        if (!this.timer) {
-            this.timer = setTimeout(() => this.processNext(), 100);
+    private async attemptProcess() {
+        if (!navigator.locks) {
+            // Fallback for very old browsers: just run it unsafe
+            this.processQueue();
+            return;
         }
-    }
 
-    private async processNext() {
-        this.timer = null;
-
-        if (this.isProcessing) return;
-
-        try {
-            // 1. Recover any "stuck" processing jobs (e.g. from crash/reload)
-            // If a job has been 'processing' for > 1 minute, reset it.
-            const stuckTime = new Date(Date.now() - 60000);
-            await db.jobs
-                .where('status').equals('processing')
-                .filter(j => j.createdAt < stuckTime) 
-                .modify({ status: 'pending', retryCount: 0 }); // Simple retry strategy
-
-            // 2. Fetch next highest priority pending job
-            const job = await db.jobs
-                .where('status').equals('pending')
-                .reverse()
-                .sortBy('priority')
-                .then(list => list[0]);
-
-            if (!job) {
-                // No work found, sleep for a bit then check again
-                // (Long polling for background tasks)
-                this.timer = setTimeout(() => this.processNext(), 2000);
+        navigator.locks.request('readread-queue-processor', { ifAvailable: true }, async (lock) => {
+            if (!lock) {
+                // Another tab is processing. We can chill.
                 return;
             }
+            this.isLocked = true;
+            await this.processQueue();
+            this.isLocked = false;
+        });
+    }
 
-            this.isProcessing = true;
+    private async processQueue() {
+        // Grab the single highest priority job
+        // We re-query inside the lock to be sure
+        const job = await db.jobs
+            .where('status')
+            .equals('pending')
+            .reverse()
+            .sortBy('priority')
+            .then(list => list[0]);
 
-            // 3. Mark as processing
+        if (!job) return;
+
+        try {
+            // 1. Mark as processing (Atomic-ish)
             await db.jobs.update(job.id!, { status: 'processing' });
 
-            try {
-                // 4. Do the work
-                await AudioGenerationService.generate(job.chunkId);
-                
-                // 5. Cleanup on success
-                await db.jobs.delete(job.id!);
+            // 2. Execute
+            await AudioGenerationService.generate(job.chunkId);
+            
+            // 3. Complete
+            await db.jobs.delete(job.id!);
 
-            } catch (error) {
-                console.error(`[JobQueue] Job ${job.id} failed`, error);
-                
-                // Max retries 3
-                if (job.retryCount >= 3) {
+            // 4. Recurse immediately if there are more jobs (keeps the lock held)
+            // This prevents "thrashing" the lock release/acquire
+            const nextCount = await db.jobs.where('status').equals('pending').count();
+            if (nextCount > 0) {
+                await this.processQueue();
+            }
+
+        } catch (error) {
+            console.error(`[JobQueue] Job ${job.id} failed:`, error);
+            
+            const currentJob = await db.jobs.get(job.id!);
+            if (currentJob) {
+                if ((currentJob.retryCount || 0) >= 2) {
                     await db.jobs.update(job.id!, { status: 'failed' });
                 } else {
                     await db.jobs.update(job.id!, { 
                         status: 'pending', 
-                        retryCount: job.retryCount + 1,
-                        priority: job.priority - 10 // Lower priority on retry
+                        retryCount: (currentJob.retryCount || 0) + 1,
+                        priority: Math.max(0, currentJob.priority - 5) 
                     });
                 }
             }
-        } catch (e) {
-            console.error("[JobQueue] Critical Error", e);
-        } finally {
-            this.isProcessing = false;
-            // Check immediately for more work
-            this.poke(); 
         }
+    }
+
+    private async cleanupStuckJobs() {
+        const oneMinuteAgo = new Date(Date.now() - 60000);
+        await db.jobs
+            .where('status').equals('processing')
+            .filter(j => j.createdAt < oneMinuteAgo) 
+            .modify({ status: 'pending', retryCount: 0 });
+    }
+
+    public stop() {
+        this.subscription?.unsubscribe();
     }
 }
 

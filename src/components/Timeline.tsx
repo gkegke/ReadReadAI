@@ -3,7 +3,7 @@ import { ChunkItem } from './ChunkItem';
 import { useAudioStore } from '../store/useAudioStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProjectChunkIds } from '../hooks/useQueries';
-import { ProjectActions } from '../services/ProjectActions';
+import { useImportTextMutation, useImportDocumentMutation } from '../hooks/useMutations'; // Updated Import
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Plus, Send, Upload, Loader2 } from 'lucide-react';
 
@@ -15,7 +15,6 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
   const { activeChunkId } = useAudioStore();
   const { activeProjectId } = useProjectStore();
   
-  // Optimized hook from useQueries
   const { data: chunkIds, isLoading: isChunksLoading } = useProjectChunkIds(activeProjectId);
   
   const virtuosoRef = useRef<VirtuosoHandle>(null);
@@ -23,33 +22,31 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
   const inputAreaRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState('');
   
-  // Local loading state for import actions
-  const [isImporting, setIsImporting] = useState(false);
+  // Replace local loading state with Mutation Hooks
+  const { mutate: importText, isPending: isImportingText } = useImportTextMutation();
+  const { mutate: importDoc, isPending: isImportingDoc } = useImportDocumentMutation();
+  
+  const isImporting = isImportingText || isImportingDoc;
 
-  const handleQuickAdd = async () => {
+  const handleQuickAdd = () => {
       if (!inputValue.trim()) return;
       const textToProcess = inputValue;
       setInputValue('');
       
-      setIsImporting(true);
-      try {
-          await ProjectActions.importRawText(textToProcess);
-      } finally {
-          setIsImporting(false);
-          inputAreaRef.current?.focus();
-      }
+      importText(textToProcess, {
+          onSuccess: () => {
+              inputAreaRef.current?.focus();
+          }
+      });
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files?.[0]) {
-          setIsImporting(true);
-          try {
-              await ProjectActions.importDocument(e.target.files[0]);
-          } finally {
-              setIsImporting(false);
-              // Reset input so same file can be selected again if needed
-              if (fileInputRef.current) fileInputRef.current.value = '';
-          }
+          importDoc(e.target.files[0], {
+              onSuccess: () => {
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+              }
+          });
       }
   };
 

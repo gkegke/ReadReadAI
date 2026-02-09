@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { Sidebar } from './components/Sidebar'
 import { StudioHeader } from './components/StudioHeader'
 import { useProjectStore } from './store/useProjectStore'
-import { useProjects } from './hooks/useQueries' // Fixed Import Path
+import { useProjects } from './hooks/useQueries'
 import { ttsService } from './services/TTSService'
 import { DemoService } from './services/DemoService'
 import { useTTSStore } from './store/useTTSStore'
@@ -13,11 +13,10 @@ import { Timeline } from './components/Timeline'
 import { PlayerControls } from './components/PlayerControls'
 import { usePlaybackEngine } from './hooks/usePlaybackEngine'
 import { storage } from './services/storage'
-import { jobQueueManager } from './services/JobQueueManager'
 
 function App() {
   const { activeProjectId } = useProjectStore();
-  const { data: projects } = useProjects(); // Updated for hook return signature
+  const { data: projects } = useProjects();
   const activeProject = projects?.find(p => p.id === activeProjectId);
   
   const { modelStatus, errorMessage } = useTTSStore();
@@ -26,15 +25,18 @@ function App() {
   usePlaybackEngine();
 
   useEffect(() => {
+    // Standard PWA/Theme setup
     if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
       document.documentElement.classList.add('dark');
     }
+    
+    // Initialize Core Services
     storage.init();
-    jobQueueManager.poke();
-
+    
     if (modelStatus === ModelStatus.UNLOADED) {
       ttsService.loadModel(activeModelId);
     }
+
     DemoService.checkAndCreateDemoProject();
   }, []);
 

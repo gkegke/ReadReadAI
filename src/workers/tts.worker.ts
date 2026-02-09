@@ -1,35 +1,33 @@
-import { WavEncoder } from '../lib/wav-encoder';
+import * as Comlink from 'comlink';
+import { AudioEncoderService } from '../lib/audio-encoder';
 import { AVAILABLE_MODELS, type ModelConfig } from '../types/tts';
 import { writeToHandle } from '../lib/storage-shared';
 
-console.log("[Worker] Script evaluation started...");
+/**
+ * TTSWorker Implementation
+ * Uses native WebCodecs for high-performance encoding.
+ */
+class TTSWorkerImpl {
+    private currentEngine: any = null;
+    private currentModelId: string | null = null;
+    private opfsRoot: FileSystemDirectoryHandle | null = null;
 
-let currentEngine: any = null;
-let currentModelId: string | null = null;
-let isInitializing = false;
-let opfsRoot: FileSystemDirectoryHandle | null = null;
+    public async initModel(
+        modelId: string, 
+        rootHandle: FileSystemDirectoryHandle | undefined,
+        onProgress: (phase: string, percent: number) => void
+    ): Promise<{ modelId: string, voices: {id: string, name: string}[] }> {
+        
+        if (this.currentModelId === modelId && this.currentEngine) {
+            return { modelId, voices: this.currentEngine.getVoices() };
+        }
 
-let taskQueue: Promise<void> = Promise.resolve();
+        if (rootHandle) this.opfsRoot = rootHandle;
 
-function reply(message: any) {
-  self.postMessage(message);
-}
-
-async function initModel(modelId: string, rootHandle?: FileSystemDirectoryHandle) {
-    if (currentModelId === modelId || isInitializing) return;
-    isInitializing = true;
-    
-    // EPIC 4: Store the handle
-    if (rootHandle) {
-        opfsRoot = rootHandle;
-        console.log("[Worker] OPFS Handle received.");
-    }
-
-    try {
         const modelDef = AVAILABLE_MODELS.find(m => m.id === modelId);
         if (!modelDef) throw new Error(`Model ${modelId} not found`);
 
-        reply({ type: 'PROGRESS', payload: { phase: `Loading ${modelDef.name}...`, percent: 10 } });
+        onProgress(`Loading ${modelDef.name}...`, 10);
 
         let EngineClass;
         switch (modelDef.provider) {
@@ -41,73 +39,44 @@ async function initModel(modelId: string, rootHandle?: FileSystemDirectoryHandle
                 const { KittenEngine } = await import('../lib/tts/KittenEngine');
                 EngineClass = KittenEngine;
                 break;
-            case 'dummy':
-                EngineClass = null;
-                break;
             default:
-                throw new Error(`Unsupported provider: ${modelDef.provider}`);
+                EngineClass = null;
         }
 
         if (EngineClass) {
-            currentEngine = new EngineClass();
-            await currentEngine.init(modelDef.config);
-        } else {
-            currentEngine = null;
+            this.currentEngine = new EngineClass();
+            await this.currentEngine.init(modelDef.config);
         }
 
-        currentModelId = modelId;
-        const voices = currentEngine ? currentEngine.getVoices() : [];
-        reply({ type: 'INIT_SUCCESS', payload: { modelId, voices } });
-
-    } catch (e: any) {
-        console.error("[Worker] Initialization failed:", e);
-        reply({ type: 'INIT_ERROR', error: e.message || String(e) });
-    } finally {
-        isInitializing = false;
+        this.currentModelId = modelId;
+        const voices = this.currentEngine ? this.currentEngine.getVoices() : [];
+        return { modelId, voices };
     }
-}
 
-async function generate(id: string, text: string, config: ModelConfig, filepath: string) {
-    try {
-        let wavBlob: Blob;
-        if (!currentEngine) {
-            const sampleRate = 24000;
-            const samples = new Float32Array(sampleRate * 0.5);
-            for(let i=0; i<samples.length; i++) samples[i] = Math.sin(2 * Math.PI * 440 * (i/sampleRate)) * 0.3;
-            wavBlob = WavEncoder.encode(samples, sampleRate);
-        } else {
-            const result = await currentEngine.generate(text, config);
-            wavBlob = WavEncoder.encode(result.audio, result.sampleRate);
-        }
+    public async generate(
+        text: string, 
+        config: ModelConfig, 
+        filepath: string
+    ): Promise<{ byteSize: number, blob?: Blob }> {
+        
+        if (!this.currentEngine) throw new Error("Engine not initialized");
 
-        // EPIC 4: Direct Write
-        if (opfsRoot) {
+        const result = await this.currentEngine.generate(text, config);
+        
+        // PIVOT: Using WebCodecs native encoder
+        const audioBlob = await AudioEncoderService.encode(result.audio, result.sampleRate);
+
+        if (this.opfsRoot) {
             try {
-                await writeToHandle(opfsRoot, filepath, wavBlob);
-                // SUCCESS: Sent metadata only, no heavy blob
-                reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size } });
+                await writeToHandle(this.opfsRoot, filepath, audioBlob);
+                return { byteSize: audioBlob.size };
             } catch (storageErr) {
-                // FALLBACK: If OPFS write fails inside worker (rare but possible), send blob back
-                console.warn("[Worker] OPFS write failed, sending blob fallback", storageErr);
-                reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size, blob: wavBlob } });
+                return { byteSize: audioBlob.size, blob: audioBlob };
             }
         } else {
-             // LEGACY/MEMORY MODE: Send blob back
-            reply({ type: 'GENERATION_COMPLETE', payload: { id, byteSize: wavBlob.size, blob: wavBlob } });
+            return { byteSize: audioBlob.size, blob: audioBlob };
         }
-    } catch (e: any) {
-        reply({ type: 'GENERATION_ERROR', payload: { id, error: e.message || String(e) } });
     }
 }
 
-self.onmessage = (event) => {
-    const { type, payload } = event.data;
-    if (type === 'INIT_MODEL') {
-        taskQueue = taskQueue.then(() => initModel(payload.modelId, payload.rootHandle));
-    }
-    if (type === 'GENERATE') {
-        taskQueue = taskQueue.then(() => generate(payload.id, payload.text, payload.config, payload.filepath));
-    }
-};
-
-reply({ type: 'WORKER_BOOTED' });
+Comlink.expose(new TTSWorkerImpl());

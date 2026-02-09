@@ -5,7 +5,7 @@ import { useSystemStore } from '../store/useSystemStore';
 import { useGlobalJobStatus } from '../hooks/useQueries';
 import { AVAILABLE_MODELS, ModelStatus } from '../types/tts';
 import { ttsService } from '../services/TTSService';
-import { ProjectActions } from '../services/ProjectActions';
+import { ProjectRepository } from '../repositories/ProjectRepository';
 import { Loader2, Download, Cpu, User, Activity, HardDrive, Layers } from 'lucide-react';
 import { db } from '../db';
 import { storage } from '../services/storage';
@@ -15,7 +15,6 @@ export const StudioHeader: React.FC = () => {
     const { modelStatus, availableVoices, progressPhase, progressPercent } = useTTSStore();
     const { activeModelId, setActiveModelId, storageMode } = useSystemStore();
     
-    // Reactive Job Status from DB
     const { isWorking, pendingCount } = useGlobalJobStatus();
 
     const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -36,7 +35,6 @@ export const StudioHeader: React.FC = () => {
     return (
         <header className="h-14 border-b border-border flex items-center px-4 justify-between bg-background/80 backdrop-blur-md sticky top-0 z-50">
             <div className="flex items-center gap-6">
-                {/* Engine Selector */}
                 <div className="flex items-center gap-2 bg-secondary/50 p-1 rounded-md border border-border">
                     <div className="flex items-center gap-1.5 px-2 text-muted-foreground">
                         <Cpu className="w-3.5 h-3.5" />
@@ -54,7 +52,6 @@ export const StudioHeader: React.FC = () => {
                     </select>
                 </div>
 
-                {/* Voice Selector */}
                 <div className="flex items-center gap-2 bg-secondary/50 p-1 rounded-md border border-border">
                     <div className="flex items-center gap-1.5 px-2 text-muted-foreground">
                         <User className="w-3.5 h-3.5" />
@@ -70,7 +67,6 @@ export const StudioHeader: React.FC = () => {
                     </select>
                 </div>
 
-                {/* Status Indicator */}
                 <div className="flex items-center gap-3">
                     <div className={`flex items-center gap-1.5 text-xs font-mono px-2 py-0.5 rounded-full border ${
                         modelStatus === ModelStatus.READY ? 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' :
@@ -106,7 +102,7 @@ export const StudioHeader: React.FC = () => {
                             <Loader2 className="w-4 h-4" />
                         </button>
                         <button 
-                            onClick={() => ProjectActions.exportProjectAudio(activeProjectId)}
+                            onClick={() => ProjectRepository.exportProjectAudio(activeProjectId)}
                             disabled={isExporting}
                             className="flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-foreground rounded-md text-xs font-bold hover:opacity-90 disabled:opacity-50 transition-all"
                         >
