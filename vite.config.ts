@@ -14,18 +14,19 @@ export default defineConfig({
       ]
     })
   ],
-  assetsInclude: ['**/*.wasm'], 
+  // CRITICAL: Ensure .wasm files are treated as external assets
+  assetsInclude: ['**/*.wasm'],
   optimizeDeps: {
-    exclude: ['onnxruntime-web', 'phonemizer']
-  },
-  worker: {
-    format: 'es',
-    plugins: () => [react()]
+    // Exclude heavy ML/WASM packages from pre-bundling
+    exclude: ['onnxruntime-web', 'kokoro-js', 'espeak-ng']
   },
   server: {
     headers: {
       'Cross-Origin-Opener-Policy': 'same-origin',
       'Cross-Origin-Embedder-Policy': 'require-corp'
     }
+  },
+  worker: {
+    format: 'es'
   }
 })

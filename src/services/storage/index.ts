@@ -4,37 +4,25 @@ import { MemoryStorageService } from './MemoryStorage';
 import { useSystemStore } from '../../store/useSystemStore';
 
 let instance: StorageService | null = null;
-let isInitializing = false;
 let initPromise: Promise<void> | null = null;
 
 async function initializeStorageImplementation() {
   if (instance) return;
-  
-  if (isInitializing && initPromise) {
-      await initPromise;
-      return;
-  }
+  if (initPromise) return initPromise;
 
-  isInitializing = true;
-  
   initPromise = (async () => {
     try {
       const opfs = new OpfsStorageService();
-      await opfs.init();
+      await opfs.init(); // This will throw if OPFS is broken
       
-      const testFile = '.health_check';
-      await opfs.saveFile(testFile, new Blob(['ok']));
-      await opfs.deleteFile(testFile);
-
       instance = opfs;
       useSystemStore.getState().setStorageMode('opfs');
       console.log("[Storage] Using OPFS (Persistent)");
     } catch (e) {
-      console.warn("[Storage] OPFS unavailable. Falling back to Memory.", e);
+      console.warn("[Storage] Fallback to Memory due to:", e);
       instance = new MemoryStorageService();
+      await instance.init();
       useSystemStore.getState().setStorageMode('memory');
-    } finally {
-      isInitializing = false;
     }
   })();
 
@@ -42,39 +30,15 @@ async function initializeStorageImplementation() {
 }
 
 export const storage: StorageService = {
-  init: async () => {
-    await initializeStorageImplementation();
-  },
-
-  getRootHandle: async () => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.getRootHandle();
-  },
-
-  saveFile: async (path, blob) => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.saveFile(path, blob);
-  },
-
-  readFile: async (path) => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.readFile(path);
-  },
-
-  exists: async (path) => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.exists(path);
-  },
-
-  deleteFile: async (path) => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.deleteFile(path);
-  },
-
-  deleteDirectory: async (path) => {
-    if (!instance) await initializeStorageImplementation();
-    return instance!.deleteDirectory(path);
-  }
+  init: initializeStorageImplementation,
+  
+  // Proxy methods ensure initialization happened
+  getRootHandle: async () => { await initializeStorageImplementation(); return instance!.getRootHandle(); },
+  saveFile: async (p, b) => { await initializeStorageImplementation(); return instance!.saveFile(p, b); },
+  readFile: async (p) => { await initializeStorageImplementation(); return instance!.readFile(p); },
+  exists: async (p) => { await initializeStorageImplementation(); return instance!.exists(p); },
+  deleteFile: async (p) => { await initializeStorageImplementation(); return instance!.deleteFile(p); },
+  deleteDirectory: async (p) => { await initializeStorageImplementation(); return instance!.deleteDirectory(p); }
 };
 
 export type * from './types';

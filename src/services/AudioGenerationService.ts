@@ -4,7 +4,6 @@ import { storage } from './storage';
 
 /**
  * Atomic service for generating audio for a single chunk.
- * This is a "Low-Level" service that does not know about queues or UI.
  */
 export const AudioGenerationService = {
     async generate(chunkId: number): Promise<void> {
@@ -24,16 +23,21 @@ export const AudioGenerationService = {
             const config = { voice: voiceId, speed: speed, lang: 'en-us' };
             const filePath = `audio/${chunk.cleanTextHash}.wav`;
 
-            // 2. Check Cache First
+            // 2. Check Cache / File System
             const cached = await db.audioCache.get(chunk.cleanTextHash);
+            // We check both the DB cache record AND the physical file existence
             const fileExists = cached && await storage.exists(cached.path);
 
             if (fileExists) {
-                await db.chunks.update(chunkId, { status: 'generated' });
+                // Short-circuit: Logic exists, file exists. Update chunk pointer.
+                await db.chunks.update(chunkId, { 
+                    status: 'generated',
+                    generatedFilePath: cached.path // UPDATE DENORMALIZED FIELD
+                });
                 return;
             }
 
-            // 3. Request TTS Inference
+            // 3. Request TTS Inference (Heavy Lifting)
             const byteSize = await ttsService.generate(chunk.textContent, config, filePath);
 
             // 4. Update Registry
@@ -46,11 +50,15 @@ export const AudioGenerationService = {
             });
 
             // 5. Success
-            await db.chunks.update(chunkId, { status: 'generated' });
+            await db.chunks.update(chunkId, { 
+                status: 'generated',
+                generatedFilePath: filePath // UPDATE DENORMALIZED FIELD
+            });
+
         } catch (error) {
             console.error(`[AudioGenerationService] Failed for chunk ${chunkId}:`, error);
             await db.chunks.update(chunkId, { status: 'failed_tts' });
-            throw error; // Re-throw so Manager can handle retries if needed
+            throw error; 
         }
     }
 };

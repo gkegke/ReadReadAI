@@ -6,6 +6,8 @@ import { useProjectChunkIds } from '../hooks/useQueries';
 import { useImportTextMutation, useImportDocumentMutation } from '../hooks/useMutations'; // Updated Import
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Plus, Send, Upload, Loader2 } from 'lucide-react';
+import { AppErrorBoundary } from './AppErrorBoundary';
+import App from '../App';
 
 interface TimelineProps {
   header?: React.ReactNode; 
@@ -131,6 +133,7 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
             </div>
         </div>
 
+        <AppErrorBoundary name="TimelineList">
         <Virtuoso
             ref={virtuosoRef}
             data={chunkIds || []}
@@ -150,6 +153,7 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
             )}
             style={{ height: '100%' }}
         />
+        </AppErrorBoundary>
     </div>
   );
 };

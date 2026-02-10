@@ -1,81 +1,41 @@
 import type { StorageService } from './types';
-import { getDirHandle, writeToHandle, readFromHandle } from '../../lib/storage-shared';
+import { file, dir } from 'opfs-tools';
 
-/**
- * Implementation of StorageService using the Origin Private File System (OPFS).
- */
 export class OpfsStorageService implements StorageService {
-  private root: FileSystemDirectoryHandle | null = null;
-
   async init(): Promise<void> {
-    if (!this.root) {
-      this.root = await navigator.storage.getDirectory();
+    if (!navigator.storage || !navigator.storage.getDirectory) {
+      throw new Error("OPFS not supported");
     }
   }
 
   async getRootHandle(): Promise<FileSystemDirectoryHandle | null> {
-    await this.init();
-    return this.root;
+    return await navigator.storage.getDirectory();
   }
 
   async saveFile(path: string, blob: Blob): Promise<void> {
-    await this.init();
-    if (!this.root) throw new Error("OPFS Root not initialized");
-    await writeToHandle(this.root, path, blob);
+    // Robustness: opfs-tools 'file' function can sometimes be undefined 
+    // if the module import fails.
+    if (typeof file !== 'function') {
+        throw new Error("Storage library failed to load");
+    }
+    const f = file(path);
+    await f.write(blob);
   }
 
   async readFile(path: string): Promise<Blob> {
-    await this.init();
-    if (!this.root) throw new Error("OPFS Root not initialized");
-    try {
-        return await readFromHandle(this.root, path);
-    } catch (error) {
-        throw new Error(`File not found: ${path}`);
-    }
+    const buffer = await file(path).arrayBuffer();
+    return new Blob([buffer]);
   }
 
   async exists(path: string): Promise<boolean> {
-      try {
-          await this.readFile(path);
-          return true;
-      } catch (e) {
-          return false;
-      }
+    return await file(path).exists();
   }
 
   async deleteFile(path: string): Promise<void> {
-    try {
-        await this.init();
-        if (!this.root) return;
-        
-        const parts = path.split('/').filter(p => p.length > 0);
-        const filename = parts.pop();
-        if (!filename) return;
-
-        const dirPath = parts.join('/');
-        const dirHandle = dirPath.length > 0 ? await getDirHandle(this.root, dirPath) : this.root;
-        
-        await dirHandle.removeEntry(filename);
-    } catch (e) {
-        console.warn(`Failed to delete file ${path}`, e);
-    }
+    await file(path).remove();
   }
 
   async deleteDirectory(path: string): Promise<void> {
-    try {
-        await this.init();
-        if (!this.root) return;
-
-        const parts = path.split('/').filter(p => p.length > 0);
-        const targetDirName = parts.pop();
-        if(!targetDirName) return;
-
-        const parentPath = parts.join('/');
-        const parentDir = parentPath.length > 0 ? await getDirHandle(this.root, parentPath) : this.root;
-
-        await parentDir.removeEntry(targetDirName, { recursive: true });
-    } catch (e) {
-        console.warn(`Failed to delete directory ${path}`, e);
-    }
+    await dir(path).remove();
   }
 }

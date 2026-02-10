@@ -35,6 +35,10 @@ export const ChunkSchema = z.object({
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),
   activeAssetId: z.number().nullable().optional(), 
+  
+  // NEW: Denormalized path for high-performance UI rendering
+  generatedFilePath: z.string().nullable().optional(),
+
   voiceOverride: z.object({
     voiceId: z.string().optional(),
     speed: z.number().optional(),
@@ -44,13 +48,12 @@ export const ChunkSchema = z.object({
   updatedAt: z.date(),
 });
 
-// --- NEW JOB SCHEMA ---
 export const JobSchema = z.object({
     id: z.number().optional(),
     chunkId: z.number(),
     projectId: z.number(),
     status: z.enum(['pending', 'processing', 'failed']),
-    priority: z.number().default(0), // Higher = sooner
+    priority: z.number().default(0),
     retryCount: z.number().default(0),
     createdAt: z.date(),
 });

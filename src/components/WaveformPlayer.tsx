@@ -1,97 +1,78 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { useAudioStore } from '../store/useAudioStore';
+import { audioPlaybackService } from '../services/AudioPlaybackService';
 
 interface WaveformPlayerProps {
     blob: Blob;
     isActive: boolean;
-    onEnded: () => void;
+    chunkId: number;
+    onEnded?: () => void;
 }
 
-/**
- * WaveformPlayer
- * Standardized Industry Playback via Wavesurfer.js 7+
- */
-export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, onEnded }) => {
+export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, chunkId }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
-    const { isPlaying, playbackSpeed, setTime } = useAudioStore();
+    
+    // Subscribe specifically to these values
+    const currentTime = useAudioStore(state => state.activeChunkId === chunkId ? state.currentTime : 0);
+    const isPlaying = useAudioStore(state => state.activeChunkId === chunkId && state.isPlaying);
+
+    const blobUrl = useMemo(() => URL.createObjectURL(blob), [blob]);
 
     useEffect(() => {
         if (!containerRef.current) return;
 
-        // Initialize WaveSurfer
         const ws = WaveSurfer.create({
             container: containerRef.current,
-            waveColor: '#94a3b8',
+            waveColor: isActive ? '#64748b' : '#94a3b8',
             progressColor: '#3b82f6',
-            cursorColor: '#3b82f6',
-            barWidth: 2,
-            barGap: 3,
-            barRadius: 3,
             height: 48,
-            normalize: true,
+            barWidth: 2,
+            cursorWidth: 0,
             interact: true,
-            hideScrollbar: true,
-            autoScroll: false, 
+            normalize: true,
+            fillParent: true,
         });
 
         wavesurferRef.current = ws;
+        ws.load(blobUrl);
 
-        const url = URL.createObjectURL(blob);
-        ws.load(url);
-
-        // Events
-        ws.on('ready', () => {
-            ws.setPlaybackRate(playbackSpeed);
-            if (isActive && isPlaying) {
-                ws.play().catch(e => console.warn("Autoplay blocked:", e));
-            }
-        });
-
-        ws.on('timeupdate', (t) => {
+        // Interaction: User clicks waveform -> Seek global engine
+        ws.on('interaction', (newTime) => {
             if (isActive) {
-                setTime(t, ws.getDuration());
+                audioPlaybackService.seek(newTime);
+            } else {
+                // If inactive, start playing this chunk from that spot
+                useAudioStore.getState().setActiveChunkId(chunkId);
+                useAudioStore.getState().setIsPlaying(true);
+                audioPlaybackService.playChunk(chunkId, blob, newTime);
             }
-        });
-
-        ws.on('finish', () => {
-            if (isActive) onEnded();
-        });
-
-        ws.on('interaction', () => {
-             // If user clicks, and we are active, we might want to ensure playing
-             // If we are NOT active, the ChunkItem parent handles the click to set active
         });
 
         return () => {
-            // Strict cleanup to prevent context leaks
             ws.destroy();
-            URL.revokeObjectURL(url);
+            wavesurferRef.current = null;
         };
-    }, [blob]); // Re-init on audio change
+    }, [blobUrl, chunkId]); // Removed isActive to prevent re-instantiation flicker
 
-    // Sync Play/Pause
+    // React to global time updates (The "Visualizer" aspect)
     useEffect(() => {
-        const ws = wavesurferRef.current;
-        if (!ws) return;
-
-        if (isActive) {
-            if (isPlaying && !ws.isPlaying()) ws.play().catch(() => {});
-            if (!isPlaying && ws.isPlaying()) ws.pause();
-        } else {
-            // If we are not active but the blob is loaded (preview mode?), stop it.
-            if (ws.isPlaying()) ws.pause();
+        if (!wavesurferRef.current || !isActive) return;
+        
+        // Optimization: Only update if drift is > 0.1s to avoid canvas thrashing
+        const wsTime = wavesurferRef.current.getCurrentTime();
+        if (Math.abs(wsTime - currentTime) > 0.1) {
+            wavesurferRef.current.setTime(currentTime);
         }
-    }, [isPlaying, isActive]);
+    }, [currentTime, isActive]);
 
-    // Sync Speed
     useEffect(() => {
-        wavesurferRef.current?.setPlaybackRate(playbackSpeed);
-    }, [playbackSpeed]);
+        return () => URL.revokeObjectURL(blobUrl);
+    }, [blobUrl]);
 
     return (
-        <div className="w-full mt-3 bg-secondary/20 rounded-lg px-2 py-1">
+        <div className={`w-full mt-3 rounded-lg px-2 py-1 transition-colors ${isActive ? 'bg-primary/5' : ''}`}>
             <div ref={containerRef} className="w-full" />
         </div>
     );

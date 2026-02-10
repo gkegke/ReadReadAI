@@ -1,28 +1,26 @@
 import * as Comlink from 'comlink';
 import { AudioEncoderService } from '../lib/audio-encoder';
 import { AVAILABLE_MODELS, type ModelConfig } from '../types/tts';
-import { writeToHandle } from '../lib/storage-shared';
+import { file } from 'opfs-tools';
 
 /**
  * TTSWorker Implementation
  * Uses native WebCodecs for high-performance encoding.
+ * Uses opfs-tools for unified file system access.
  */
 class TTSWorkerImpl {
     private currentEngine: any = null;
     private currentModelId: string | null = null;
-    private opfsRoot: FileSystemDirectoryHandle | null = null;
 
     public async initModel(
         modelId: string, 
-        rootHandle: FileSystemDirectoryHandle | undefined,
+        _unusedRoot: any, // Kept for interface compatibility but ignored
         onProgress: (phase: string, percent: number) => void
     ): Promise<{ modelId: string, voices: {id: string, name: string}[] }> {
         
         if (this.currentModelId === modelId && this.currentEngine) {
             return { modelId, voices: this.currentEngine.getVoices() };
         }
-
-        if (rootHandle) this.opfsRoot = rootHandle;
 
         const modelDef = AVAILABLE_MODELS.find(m => m.id === modelId);
         if (!modelDef) throw new Error(`Model ${modelId} not found`);
@@ -32,6 +30,7 @@ class TTSWorkerImpl {
         let EngineClass;
         switch (modelDef.provider) {
             case 'kokoro':
+                // Dynamic imports ensure we don't bundle engines we don't use
                 const { KokoroEngine } = await import('../lib/tts/KokoroEngine');
                 EngineClass = KokoroEngine;
                 break;
@@ -50,6 +49,8 @@ class TTSWorkerImpl {
 
         this.currentModelId = modelId;
         const voices = this.currentEngine ? this.currentEngine.getVoices() : [];
+        
+        onProgress('Ready', 100);
         return { modelId, voices };
     }
 
@@ -61,19 +62,19 @@ class TTSWorkerImpl {
         
         if (!this.currentEngine) throw new Error("Engine not initialized");
 
+        // 1. Inference
         const result = await this.currentEngine.generate(text, config);
         
-        // PIVOT: Using WebCodecs native encoder
+        // 2. Encoding (Float32 -> Opus/WAV)
         const audioBlob = await AudioEncoderService.encode(result.audio, result.sampleRate);
 
-        if (this.opfsRoot) {
-            try {
-                await writeToHandle(this.opfsRoot, filepath, audioBlob);
-                return { byteSize: audioBlob.size };
-            } catch (storageErr) {
-                return { byteSize: audioBlob.size, blob: audioBlob };
-            }
-        } else {
+        // 3. Storage (Direct to OPFS via opfs-tools)
+        try {
+            await file(filepath).write(audioBlob);
+            return { byteSize: audioBlob.size };
+        } catch (storageErr) {
+            console.error("Worker OPFS Write Failed:", storageErr);
+            // Fallback: return blob to main thread to handle
             return { byteSize: audioBlob.size, blob: audioBlob };
         }
     }

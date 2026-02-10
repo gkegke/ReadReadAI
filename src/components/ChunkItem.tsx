@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { useChunk, useProjectChunkIds } from '../hooks/useQueries';
-import { ProjectRepository } from '../repositories/ProjectRepository';
 import { useAudioStore } from '../store/useAudioStore';
 import { 
     useUpdateChunkTextMutation, 
@@ -9,7 +8,6 @@ import {
 import { Edit2, PlayCircle, PauseCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { storage } from '../services/storage';
-import { db } from '../db';
 import { WaveformPlayer } from './WaveformPlayer';
 
 interface ChunkItemProps {
@@ -27,15 +25,28 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isActive }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
+  // OPTIMIZATION: Read directly from chunk property, avoid DB lookup
   useEffect(() => {
-      if (chunk?.status === 'generated' && chunk.cleanTextHash) {
-          db.audioCache.get(chunk.cleanTextHash).then(meta => {
-              if (meta) storage.readFile(meta.path).then(setAudioBlob);
-          });
-      } else {
-          setAudioBlob(null);
-      }
-  }, [chunk?.status, chunk?.cleanTextHash]);
+      let active = true;
+
+      const loadAudio = async () => {
+          if (chunk?.status === 'generated' && chunk.generatedFilePath) {
+              try {
+                  const blob = await storage.readFile(chunk.generatedFilePath);
+                  if (active) setAudioBlob(blob);
+              } catch (e) {
+                  // File missing?
+                  console.warn("Audio file missing for generated chunk", e);
+                  setAudioBlob(null);
+              }
+          } else {
+              if (active) setAudioBlob(null);
+          }
+      };
+      
+      loadAudio();
+      return () => { active = false; };
+  }, [chunk?.status, chunk?.generatedFilePath]);
 
   const updateText = useUpdateChunkTextMutation();
   const generateAudio = useGenerateAudioMutation();
@@ -89,6 +100,7 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isActive }) => {
                         <WaveformPlayer 
                             blob={audioBlob} 
                             isActive={isActive} 
+                            chunkId={chunk.id!}
                             onEnded={playNext} 
                         />
                     </div>
