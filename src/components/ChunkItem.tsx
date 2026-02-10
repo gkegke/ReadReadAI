@@ -25,27 +25,25 @@ export const ChunkItem: React.FC<ChunkItemProps> = ({ chunkId, isActive }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState('');
 
-  // OPTIMIZATION: Read directly from chunk property, avoid DB lookup
   useEffect(() => {
-      let active = true;
+      let isSubscribed = true;
 
       const loadAudio = async () => {
           if (chunk?.status === 'generated' && chunk.generatedFilePath) {
               try {
                   const blob = await storage.readFile(chunk.generatedFilePath);
-                  if (active) setAudioBlob(blob);
+                  if (isSubscribed) setAudioBlob(blob);
               } catch (e) {
-                  // File missing?
                   console.warn("Audio file missing for generated chunk", e);
-                  setAudioBlob(null);
+                  if (isSubscribed) setAudioBlob(null);
               }
           } else {
-              if (active) setAudioBlob(null);
+              if (isSubscribed) setAudioBlob(null);
           }
       };
       
       loadAudio();
-      return () => { active = false; };
+      return () => { isSubscribed = false; };
   }, [chunk?.status, chunk?.generatedFilePath]);
 
   const updateText = useUpdateChunkTextMutation();

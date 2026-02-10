@@ -2,10 +2,11 @@ import { db } from '../db';
 import { useProjectStore } from '../store/useProjectStore';
 import { importService } from '../services/ImportService';
 import { exportService } from '../services/ExportService';
-import { ProjectSchema, type Project } from '../types/schema';
+import { ProjectSchema, type Project, type Chunk } from '../types/schema'; // Added Chunk type
 import { BaseRepository } from './BaseRepository';
 import { ChunkRepository } from './ChunkRepository';
 import { hashText } from '../lib/text-processor';
+import { AudioGenerationService } from '../services/AudioGenerationService'; // Added Import
 
 class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema> {
     constructor() {
@@ -91,6 +92,38 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
         a.href = url;
         a.download = result.filename;
         a.click();
+    }
+
+    // --- Facade Methods to fix UI/Hook Errors ---
+
+    /**
+     * Trigger immediate generation for a specific chunk.
+     * Used by Play buttons and Demo initialization.
+     */
+    async generateChunkAudio(chunkId: number): Promise<void> {
+        // We delegate to the service, bypassing the job queue for immediate user interaction
+        return await AudioGenerationService.generate(chunkId);
+    }
+
+    /**
+     * Used by the "DJ" engine to find the next track.
+     */
+    async getNextChunk(currentChunkId: number): Promise<Chunk | undefined> {
+        return await ChunkRepository.getNext(currentChunkId);
+    }
+
+    /**
+     * Used by the "DJ" engine to pre-load audio.
+     * If audio is missing, it triggers generation.
+     */
+    async ensureChunkAudio(chunkId: number): Promise<void> {
+        const chunk = await ChunkRepository.get(chunkId);
+        if (!chunk) return;
+
+        // If it's not generated and not currently processing, force it.
+        if (chunk.status !== 'generated' && chunk.status !== 'processing') {
+            await this.generateChunkAudio(chunkId);
+        }
     }
 }
 

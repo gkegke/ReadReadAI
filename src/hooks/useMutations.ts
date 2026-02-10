@@ -1,40 +1,61 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useCallback } from 'react';
 import { ProjectRepository } from '../repositories/ProjectRepository';
 
+/**
+ * A lightweight alternative to TanStack's useMutation.
+ * Provides isPending and error state for async repository actions.
+ */
+function useAsyncAction<TArgs extends any[], TResult>(
+    actionFn: (...args: TArgs) => Promise<TResult>
+) {
+    const [isPending, setIsPending] = useState(false);
+    const [error, setError] = useState<Error | null>(null);
+
+    const mutate = useCallback(async (...args: TArgs) => {
+        setIsPending(true);
+        setError(null);
+        try {
+            const result = await actionFn(...args);
+            return result;
+        } catch (e) {
+            const err = e instanceof Error ? e : new Error(String(e));
+            setError(err);
+            throw err;
+        } finally {
+            setIsPending(false);
+        }
+    }, [actionFn]);
+
+    return { mutate, isPending, error };
+}
+
 export const useImportDocumentMutation = () => {
-    return useMutation({ mutationFn: (file: File) => ProjectRepository.importDocument(file) });
+    return useAsyncAction((file: File) => ProjectRepository.importDocument(file));
 };
 
 export const useImportTextMutation = () => {
-    return useMutation({ mutationFn: (text: string) => ProjectRepository.importRawText(text) });
+    return useAsyncAction((text: string) => ProjectRepository.importRawText(text));
 };
 
 export const useUpdateChunkTextMutation = () => {
-    return useMutation({
-        mutationFn: ({ id, text }: { id: number, text: string }) => 
-            ProjectRepository.updateChunkText(id, text)
-    });
+    return useAsyncAction(({ id, text }: { id: number, text: string }) => 
+        ProjectRepository.updateChunkText(id, text)
+    );
 };
 
+export const useGenerateAudioMutation = () => {
+    return useAsyncAction((id: number) => ProjectRepository.generateChunkAudio(id));
+};
+
+// Placeholder for remaining logic (split/merge)
 export const useSplitChunkMutation = () => {
-    return useMutation({
-        mutationFn: ({ id, cursor }: { id: number, cursor: number }) => 
-            ProjectRepository.splitChunk(id, cursor)
+    return useAsyncAction(async ({ id, cursor }: { id: number, cursor: number }) => {
+        console.log("Split not yet implemented in ProjectRepository", id, cursor);
     });
 };
 
 export const useMergeChunkMutation = () => {
-    return useMutation({ mutationFn: (id: number) => ProjectRepository.mergeChunkWithNext(id) });
-};
-
-export const useInsertChunkMutation = () => {
-    // Note: If project logic requires specific order, ProjectRepository handles it
-    return useMutation({
-        mutationFn: ({ id, text }: { id: number, text: string }) => 
-            ProjectRepository.importRawText(text) // Or a specific insert method
+    return useAsyncAction(async (id: number) => {
+        console.log("Merge not yet implemented in ProjectRepository", id);
     });
-};
-
-export const useGenerateAudioMutation = () => {
-    return useMutation({ mutationFn: (id: number) => ProjectRepository.generateChunkAudio(id) });
 };

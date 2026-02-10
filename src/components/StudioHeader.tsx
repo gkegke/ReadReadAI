@@ -6,7 +6,8 @@ import { useGlobalJobStatus } from '../hooks/useQueries';
 import { AVAILABLE_MODELS, ModelStatus } from '../types/tts';
 import { ttsService } from '../services/TTSService';
 import { ProjectRepository } from '../repositories/ProjectRepository';
-import { Loader2, Download, Cpu, User, Activity, HardDrive, Layers } from 'lucide-react';
+import { logger } from '../services/Logger';
+import { Loader2, Download, Cpu, User, Activity, HardDrive, Layers, Terminal } from 'lucide-react';
 import { db } from '../db';
 import { storage } from '../services/storage';
 
@@ -14,7 +15,6 @@ export const StudioHeader: React.FC = () => {
     const { activeProjectId, isExporting } = useProjectStore();
     const { modelStatus, availableVoices, progressPhase, progressPercent } = useTTSStore();
     const { activeModelId, setActiveModelId, storageMode } = useSystemStore();
-    
     const { isWorking, pendingCount } = useGlobalJobStatus();
 
     const handleModelChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -25,6 +25,7 @@ export const StudioHeader: React.FC = () => {
 
     const handleClearCache = async () => {
         if (confirm("Clear all generated audio?")) {
+            logger.warn('UI', 'User initiated cache purge');
             await db.audioCache.clear();
             await storage.deleteDirectory('audio');
             await db.chunks.where('status').equals('generated').modify({ status: 'pending' });
@@ -92,6 +93,13 @@ export const StudioHeader: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-2">
+                <button 
+                    onClick={() => logger.exportLogs()}
+                    className="p-2 text-muted-foreground hover:text-foreground transition-colors"
+                    title="Export Debug Logs"
+                >
+                    <Terminal className="w-4 h-4" />
+                </button>
                 {activeProjectId && (
                     <>
                         <button 

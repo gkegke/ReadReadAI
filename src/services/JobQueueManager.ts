@@ -1,22 +1,14 @@
 import { db } from '../db';
 import { AudioGenerationService } from './AudioGenerationService';
 import { liveQuery, Subscription } from 'dexie';
+import { logger } from './Logger';
 
 class JobQueueManager {
     private subscription: Subscription | null = null;
     private isLocked = false;
-    private processingId: number | null = null;
 
     constructor() {
         this.init();
-        
-        // Safety net: Release lock processing status on unload
-        window.addEventListener('beforeunload', () => {
-            if (this.processingId) {
-                // We can't await here, but we can try to fire a quick status reset
-                // or rely on the cleanupStuckJobs of the next instance.
-            }
-        });
     }
 
     private init() {
@@ -27,15 +19,21 @@ class JobQueueManager {
 
             this.subscription = pendingJobQuery.subscribe({
                 next: (count) => {
-                    if (count > 0 && !this.isLocked) this.attemptProcess();
+                    if (count > 0 && !this.isLocked) {
+                        logger.debug('JobQueue', `Detected ${count} pending jobs.`);
+                        this.attemptProcess();
+                    }
                 },
-                error: (err) => console.error("[JobQueue] Error:", err)
+                error: (err) => logger.error('JobQueue', 'Subscription error', err)
             });
         });
     }
 
     private async attemptProcess() {
-        if (!navigator.locks) { this.processQueue(); return; }
+        if (!navigator.locks) { 
+            this.processQueue(); 
+            return; 
+        }
 
         navigator.locks.request('readread-queue-processor', { ifAvailable: true }, async (lock) => {
             if (!lock) return;
@@ -53,15 +51,12 @@ class JobQueueManager {
 
         if (!job) return;
 
-        this.processingId = job.id!;
-
         try {
             await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
             await AudioGenerationService.generate(job.chunkId);
             await db.jobs.delete(job.id!);
         } catch (error) {
-            console.error(`[JobQueue] Job ${job.id} failed:`, error);
-            // Simple retry logic
+            logger.error('JobQueue', `Job ${job.id} failed`, { error: String(error) });
             const fresh = await db.jobs.get(job.id!);
             if (fresh) {
                 if (fresh.retryCount >= 3) {
@@ -70,35 +65,27 @@ class JobQueueManager {
                     await db.jobs.update(job.id!, { 
                         status: 'pending', 
                         retryCount: fresh.retryCount + 1,
-                        priority: 0 // Drop priority
+                        priority: 0 
                     });
                 }
             }
         } finally {
-            this.processingId = null;
-            // Immediate recurse
             const nextCount = await db.jobs.where('status').equals('pending').count();
             if (nextCount > 0) await this.processQueue();
         }
     }
 
-    /**
-     * Resets jobs that have been 'processing' for too long (zombies).
-     * This runs on app boot.
-     */
     private async cleanupStuckJobs() {
         const TWO_MINUTES = 2 * 60 * 1000;
         const cutoff = new Date(Date.now() - TWO_MINUTES);
         
-        // Note: In a real app we might check a 'heartbeat' field, 
-        // but for MVP, 2 minutes is a safe "crashed" assumption.
         const stuckJobs = await db.jobs
             .where('status').equals('processing')
-            .filter(j => j.createdAt < cutoff) // Should verify 'updatedAt' if available
+            .filter(j => j.createdAt < cutoff)
             .toArray();
 
         if (stuckJobs.length > 0) {
-            console.warn(`[JobQueue] Resetting ${stuckJobs.length} stuck jobs.`);
+            logger.warn('JobQueue', `Resetting ${stuckJobs.length} zombie jobs.`);
             await db.jobs.bulkPut(stuckJobs.map(j => ({ 
                 ...j, 
                 status: 'pending', 

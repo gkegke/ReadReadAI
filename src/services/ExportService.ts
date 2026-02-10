@@ -29,14 +29,12 @@ class ExportService {
         let filesAdded = 0;
 
         for (const chunk of chunks) {
-            // EPIC 1: Check active asset linkage
-            if (!chunk.activeAssetId) continue;
-
-            const asset = await db.assets.get(chunk.activeAssetId);
+            // Retrieve path from chunk or lookup via hash in cache
+            const filePath = chunk.generatedFilePath;
             
-            if (asset) {
+            if (filePath && chunk.status === 'generated') {
                 try {
-                    const blob = await storage.readFile(asset.filePath);
+                    const blob = await storage.readFile(filePath);
                     
                     const orderPrefix = (chunk.orderInProject + 1).toString().padStart(3, '0');
                     const textSnippet = this.sanitizeFilename(chunk.textContent.slice(0, 30));
@@ -45,7 +43,7 @@ class ExportService {
                     folder.file(fileName, blob);
                     filesAdded++;
                 } catch (e) {
-                    console.warn(`Skipping chunk ${chunk.id}: Audio file missing in OPFS`, e);
+                    console.warn(`Skipping chunk ${chunk.id}: Audio file missing in storage`, e);
                 }
             }
         }

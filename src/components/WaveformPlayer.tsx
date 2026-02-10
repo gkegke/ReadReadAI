@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useMemo } from 'react';
+import React, { useEffect, useRef } from 'react';
 import WaveSurfer from 'wavesurfer.js';
 import { useAudioStore } from '../store/useAudioStore';
 import { audioPlaybackService } from '../services/AudioPlaybackService';
@@ -14,14 +14,15 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
     const containerRef = useRef<HTMLDivElement>(null);
     const wavesurferRef = useRef<WaveSurfer | null>(null);
     
-    // Subscribe specifically to these values
+    // Subscribe to specific store slices for high-performance updates
     const currentTime = useAudioStore(state => state.activeChunkId === chunkId ? state.currentTime : 0);
     const isPlaying = useAudioStore(state => state.activeChunkId === chunkId && state.isPlaying);
 
-    const blobUrl = useMemo(() => URL.createObjectURL(blob), [blob]);
-
     useEffect(() => {
         if (!containerRef.current) return;
+
+        let isDestroyed = false;
+        const blobUrl = URL.createObjectURL(blob);
 
         const ws = WaveSurfer.create({
             container: containerRef.current,
@@ -36,14 +37,18 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
         });
 
         wavesurferRef.current = ws;
-        ws.load(blobUrl);
 
-        // Interaction: User clicks waveform -> Seek global engine
+        // Load the audio and handle potential failures
+        ws.load(blobUrl).catch(err => {
+            if (!isDestroyed) {
+                console.error(`[Waveform] Failed to load blob for chunk ${chunkId}:`, err);
+            }
+        });
+
         ws.on('interaction', (newTime) => {
             if (isActive) {
                 audioPlaybackService.seek(newTime);
             } else {
-                // If inactive, start playing this chunk from that spot
                 useAudioStore.getState().setActiveChunkId(chunkId);
                 useAudioStore.getState().setIsPlaying(true);
                 audioPlaybackService.playChunk(chunkId, blob, newTime);
@@ -51,25 +56,32 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
         });
 
         return () => {
+            isDestroyed = true;
             ws.destroy();
+            URL.revokeObjectURL(blobUrl);
             wavesurferRef.current = null;
         };
-    }, [blobUrl, chunkId]); // Removed isActive to prevent re-instantiation flicker
+    }, [blob, chunkId]); // Re-init only if blob or chunk identity changes
 
-    // React to global time updates (The "Visualizer" aspect)
+    // Update Visuals without re-mounting
     useEffect(() => {
-        if (!wavesurferRef.current || !isActive) return;
+        if (wavesurferRef.current) {
+            wavesurferRef.current.setOptions({
+                waveColor: isActive ? '#64748b' : '#94a3b8',
+            });
+        }
+    }, [isActive]);
+
+    // Sync Playhead
+    useEffect(() => {
+        const ws = wavesurferRef.current;
+        if (!ws || !isActive) return;
         
-        // Optimization: Only update if drift is > 0.1s to avoid canvas thrashing
-        const wsTime = wavesurferRef.current.getCurrentTime();
+        const wsTime = ws.getCurrentTime();
         if (Math.abs(wsTime - currentTime) > 0.1) {
-            wavesurferRef.current.setTime(currentTime);
+            ws.setTime(currentTime);
         }
     }, [currentTime, isActive]);
-
-    useEffect(() => {
-        return () => URL.revokeObjectURL(blobUrl);
-    }, [blobUrl]);
 
     return (
         <div className={`w-full mt-3 rounded-lg px-2 py-1 transition-colors ${isActive ? 'bg-primary/5' : ''}`}>

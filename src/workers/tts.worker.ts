@@ -1,12 +1,10 @@
 import * as Comlink from 'comlink';
 import { AudioEncoderService } from '../lib/audio-encoder';
 import { AVAILABLE_MODELS, type ModelConfig } from '../types/tts';
-import { file } from 'opfs-tools';
 
 /**
  * TTSWorker Implementation
- * Uses native WebCodecs for high-performance encoding.
- * Uses opfs-tools for unified file system access.
+ * Uses native Web APIs for storage and encoding.
  */
 class TTSWorkerImpl {
     private currentEngine: any = null;
@@ -14,7 +12,7 @@ class TTSWorkerImpl {
 
     public async initModel(
         modelId: string, 
-        _unusedRoot: any, // Kept for interface compatibility but ignored
+        _unusedRoot: any,
         onProgress: (phase: string, percent: number) => void
     ): Promise<{ modelId: string, voices: {id: string, name: string}[] }> {
         
@@ -30,7 +28,6 @@ class TTSWorkerImpl {
         let EngineClass;
         switch (modelDef.provider) {
             case 'kokoro':
-                // Dynamic imports ensure we don't bundle engines we don't use
                 const { KokoroEngine } = await import('../lib/tts/KokoroEngine');
                 EngineClass = KokoroEngine;
                 break;
@@ -65,16 +62,28 @@ class TTSWorkerImpl {
         // 1. Inference
         const result = await this.currentEngine.generate(text, config);
         
-        // 2. Encoding (Float32 -> Opus/WAV)
+        // 2. Encoding
         const audioBlob = await AudioEncoderService.encode(result.audio, result.sampleRate);
 
-        // 3. Storage (Direct to OPFS via opfs-tools)
+        // 3. Native Storage Write
         try {
-            await file(filepath).write(audioBlob);
+            const root = await navigator.storage.getDirectory();
+            const parts = filepath.split('/');
+            const fileName = parts.pop()!;
+            let currentDir = root;
+
+            for (const part of parts) {
+                currentDir = await currentDir.getDirectoryHandle(part, { create: true });
+            }
+
+            const fileHandle = await currentDir.getFileHandle(fileName, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(audioBlob);
+            await writable.close();
+
             return { byteSize: audioBlob.size };
         } catch (storageErr) {
-            console.error("Worker OPFS Write Failed:", storageErr);
-            // Fallback: return blob to main thread to handle
+            console.error("[Worker] Native OPFS Write Failed, falling back to message passing", storageErr);
             return { byteSize: audioBlob.size, blob: audioBlob };
         }
     }

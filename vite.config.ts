@@ -15,9 +15,10 @@ export default defineConfig({
     })
   ],
   // CRITICAL: Ensure .wasm files are treated as external assets
-  assetsInclude: ['**/*.wasm'],
+  assetsInclude: ['**/*.wasm', '**/*.data'],
   optimizeDeps: {
-    // Exclude heavy ML/WASM packages from pre-bundling
+    // Exclude heavy ML/WASM packages from pre-bundling to prevent VITE from 
+    // trying to compile the glue code incorrectly
     exclude: ['onnxruntime-web', 'kokoro-js', 'espeak-ng']
   },
   server: {

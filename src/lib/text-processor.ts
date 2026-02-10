@@ -1,7 +1,5 @@
-import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-
 /**
- * Text processing utilities.
+ * Text processing utilities using native Web APIs.
  */
 
 // Simple hash function for text (DJB2 variant)
@@ -19,31 +17,35 @@ export function generateAssetSignature(text: string, voiceId: string, speed: num
 }
 
 /**
- * Split text into chunks using LangChain's RecursiveCharacterTextSplitter.
- * This ensures semantic boundaries (paragraphs -> sentences) are respected.
+ * Split text into chunks using native Intl.Segmenter.
+ * This ensures sentence boundaries are respected without external dependencies.
  */
-export async function chunkText(text: string, targetChunkSize = 1000): Promise<string[]> {
+export function chunkText(text: string, targetChunkSize = 1000): string[] {
   const normalizedText = text.replace(/\r\n/g, '\n').trim();
   if (!normalizedText) return [];
 
-  const splitter = new RecursiveCharacterTextSplitter({
-    chunkSize: targetChunkSize,
-    chunkOverlap: 0, // We generally want distinct audio blocks
-    separators: ["\n\n", "\n", ".", "!", "?", " ", ""], // Priority of splitting
-  });
+  // Use native sentence segmenter
+  const segmenter = new Intl.Segmenter(undefined, { granularity: 'sentence' });
+  const segments = Array.from(segmenter.segment(normalizedText));
+  
+  const chunks: string[] = [];
+  let currentChunk = "";
 
-  // LangChain returns "Documents", we map back to strings
-  const output = await splitter.createDocuments([normalizedText]);
-  return output.map(doc => doc.pageContent);
-}
+  for (const segment of segments) {
+    const sentence = segment.segment;
+    
+    // If adding this sentence exceeds chunk size, push current and start new
+    if ((currentChunk.length + sentence.length) > targetChunkSize && currentChunk.length > 0) {
+      chunks.push(currentChunk.trim());
+      currentChunk = sentence;
+    } else {
+      currentChunk += sentence;
+    }
+  }
 
-/**
- * Legacy synchronous fallback if needed, or wrapper for the async LangChain splitter.
- * Since LangChain 0.2+ is async, we expose this as a Promise.
- */
-export const chunkTextSync = (text: string): string[] => {
-    // Note: If you absolutely need sync chunking, we'd need a different library
-    // or the old regex implementation. For this architecture, async is preferred.
-    console.warn("Synchronous chunking requested but using Async implementation");
-    return []; 
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  return chunks;
 }

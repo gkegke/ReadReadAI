@@ -3,11 +3,10 @@ import { ChunkItem } from './ChunkItem';
 import { useAudioStore } from '../store/useAudioStore';
 import { useProjectStore } from '../store/useProjectStore';
 import { useProjectChunkIds } from '../hooks/useQueries';
-import { useImportTextMutation, useImportDocumentMutation } from '../hooks/useMutations'; // Updated Import
+import { useImportTextMutation, useImportDocumentMutation } from '../hooks/useMutations';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { Plus, Send, Upload, Loader2 } from 'lucide-react';
 import { AppErrorBoundary } from './AppErrorBoundary';
-import App from '../App';
 
 interface TimelineProps {
   header?: React.ReactNode; 
@@ -24,31 +23,32 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
   const inputAreaRef = useRef<HTMLTextAreaElement>(null);
   const [inputValue, setInputValue] = useState('');
   
-  // Replace local loading state with Mutation Hooks
   const { mutate: importText, isPending: isImportingText } = useImportTextMutation();
   const { mutate: importDoc, isPending: isImportingDoc } = useImportDocumentMutation();
   
   const isImporting = isImportingText || isImportingDoc;
 
-  const handleQuickAdd = () => {
+  const handleQuickAdd = async () => {
       if (!inputValue.trim()) return;
       const textToProcess = inputValue;
       setInputValue('');
       
-      importText(textToProcess, {
-          onSuccess: () => {
-              inputAreaRef.current?.focus();
-          }
-      });
+      try {
+          await importText(textToProcess);
+          inputAreaRef.current?.focus();
+      } catch (e) {
+          console.error("Failed to import text", e);
+      }
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files?.[0]) {
-          importDoc(e.target.files[0], {
-              onSuccess: () => {
-                  if (fileInputRef.current) fileInputRef.current.value = '';
-              }
-          });
+          try {
+              await importDoc(e.target.files[0]);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+          } catch (e) {
+              console.error("Failed to import doc", e);
+          }
       }
   };
 
@@ -85,7 +85,6 @@ export const Timeline: React.FC<TimelineProps> = ({ header }) => {
 
   return (
     <div className="h-full w-full flex flex-col">
-        {/* Input Cell */}
         <div className="max-w-3xl w-full mx-auto px-6 py-6 border-b border-border bg-background/50 backdrop-blur-sm z-10 sticky top-0">
             <div className="relative group shadow-sm hover:shadow-md transition-shadow rounded-xl">
                 <textarea 

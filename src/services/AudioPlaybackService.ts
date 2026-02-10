@@ -12,12 +12,10 @@ class AudioPlaybackService {
     }
 
     private setupListeners() {
-        // Sync Time
         this.audio.ontimeupdate = () => {
             useAudioStore.getState().setTime(this.audio.currentTime, this.audio.duration || 0);
         };
 
-        // Sync State
         this.audio.onplay = () => useAudioStore.getState().setIsPlaying(true);
         this.audio.onpause = () => useAudioStore.getState().setIsPlaying(false);
         this.audio.onended = () => {
@@ -26,7 +24,7 @@ class AudioPlaybackService {
         };
         
         this.audio.onerror = (e) => {
-            console.error("Audio Playback Error:", e);
+            console.error("[AudioPlayback] Element Error:", e);
             useAudioStore.getState().setIsPlaying(false);
         };
     }
@@ -34,17 +32,21 @@ class AudioPlaybackService {
     public async playChunk(chunkId: number, blob: Blob, startTime: number = 0, autoPlay: boolean = true) {
         const store = useAudioStore.getState();
 
-        // Prevent reloading if it's the same asset
+        // If same chunk, just handle play/pause/seek
         if (this.currentChunkId === chunkId && this.currentBlobUrl) {
             if (Math.abs(this.audio.currentTime - startTime) > 0.1) {
                 this.audio.currentTime = startTime;
             }
-            if (autoPlay && this.audio.paused) await this.audio.play();
+            if (autoPlay && this.audio.paused) {
+                await this.audio.play().catch(e => console.warn("Autoplay blocked", e));
+            }
             return;
         }
 
-        // Cleanup old url
-        if (this.currentBlobUrl) URL.revokeObjectURL(this.currentBlobUrl);
+        // Clean up previous URL to prevent memory leaks
+        if (this.currentBlobUrl) {
+            URL.revokeObjectURL(this.currentBlobUrl);
+        }
 
         this.currentChunkId = chunkId;
         this.currentBlobUrl = URL.createObjectURL(blob);
@@ -57,14 +59,17 @@ class AudioPlaybackService {
             try {
                 await this.audio.play();
             } catch (e) {
-                console.warn("Autoplay blocked or interrupted:", e);
+                console.warn("[AudioPlayback] Play interrupted or blocked:", e);
             }
         }
     }
 
     public toggle() {
-        if (this.audio.paused && this.audio.src) this.audio.play();
-        else this.audio.pause();
+        if (this.audio.paused && this.audio.src) {
+            this.audio.play().catch(() => {});
+        } else {
+            this.audio.pause();
+        }
     }
 
     public seek(time: number) {
@@ -80,6 +85,11 @@ class AudioPlaybackService {
     public stop() {
         this.audio.pause();
         this.audio.currentTime = 0;
+        if (this.currentBlobUrl) {
+            URL.revokeObjectURL(this.currentBlobUrl);
+            this.currentBlobUrl = null;
+        }
+        this.currentChunkId = null;
     }
 }
 

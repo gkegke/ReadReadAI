@@ -23,20 +23,20 @@ class ImportService {
 
     return {
       fileName: file.name,
-      chunks: await this.createChunks(fullText, projectId)
+      chunks: this.createChunks(fullText, projectId)
     };
   }
 
   async importText(text: string, projectId: number): Promise<ImportResult> {
       return {
           fileName: 'Direct Input',
-          chunks: await this.createChunks(text, projectId)
+          chunks: this.createChunks(text, projectId)
       };
   }
 
-  // Updated to be Async to support LangChain
-  private async createChunks(text: string, projectId: number): Promise<Omit<Chunk, 'id'>[]> {
-    const rawChunks = await chunkText(text); // Awaited LangChain splitter
+  private createChunks(text: string, projectId: number): Omit<Chunk, 'id'>[] {
+    // chunkText is now a synchronous native call
+    const rawChunks = chunkText(text); 
     const now = new Date();
     
     return rawChunks.map((chunkText, index) => ({

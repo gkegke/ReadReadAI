@@ -1,46 +1,46 @@
 import { db } from '../db';
 import { ttsService } from './TTSService';
 import { storage } from './storage';
+import { logger } from './Logger';
 
-/**
- * Atomic service for generating audio for a single chunk.
- */
 export const AudioGenerationService = {
     async generate(chunkId: number): Promise<void> {
         const chunk = await db.chunks.get(chunkId);
         if (!chunk || chunk.status === 'processing') return;
 
         const project = await db.projects.get(chunk.projectId);
-        if (!project) return;
+        if (!project) {
+            logger.error('AudioGen', 'Project not found for chunk', { chunkId, projectId: chunk.projectId });
+            return;
+        }
 
-        // 1. Mark as processing
         await db.chunks.update(chunkId, { status: 'processing' });
+        logger.info('AudioGen', `Starting synthesis for chunk ${chunkId}`, { textSnippet: chunk.textContent.slice(0, 30) });
 
         try {
             const voiceId = chunk.voiceOverride?.voiceId || project.voiceSettings?.voiceId || 'af_heart';
             const speed = chunk.voiceOverride?.speed || project.voiceSettings?.speed || 1.0;
-
             const config = { voice: voiceId, speed: speed, lang: 'en-us' };
             const filePath = `audio/${chunk.cleanTextHash}.wav`;
 
-            // 2. Check Cache / File System
             const cached = await db.audioCache.get(chunk.cleanTextHash);
-            // We check both the DB cache record AND the physical file existence
             const fileExists = cached && await storage.exists(cached.path);
 
             if (fileExists) {
-                // Short-circuit: Logic exists, file exists. Update chunk pointer.
+                logger.debug('AudioGen', `Cache hit for hash ${chunk.cleanTextHash}`);
                 await db.chunks.update(chunkId, { 
                     status: 'generated',
-                    generatedFilePath: cached.path // UPDATE DENORMALIZED FIELD
+                    generatedFilePath: cached.path 
                 });
                 return;
             }
 
-            // 3. Request TTS Inference (Heavy Lifting)
+            const startTime = performance.now();
             const byteSize = await ttsService.generate(chunk.textContent, config, filePath);
+            const duration = performance.now() - startTime;
 
-            // 4. Update Registry
+            logger.info('AudioGen', `Synthesis complete in ${duration.toFixed(0)}ms`, { chunkId, byteSize });
+
             await db.audioCache.put({
                 hash: chunk.cleanTextHash,
                 path: filePath,
@@ -49,14 +49,13 @@ export const AudioGenerationService = {
                 createdAt: new Date()
             });
 
-            // 5. Success
             await db.chunks.update(chunkId, { 
                 status: 'generated',
-                generatedFilePath: filePath // UPDATE DENORMALIZED FIELD
+                generatedFilePath: filePath 
             });
 
         } catch (error) {
-            console.error(`[AudioGenerationService] Failed for chunk ${chunkId}:`, error);
+            logger.error('AudioGen', `Failed synthesis for chunk ${chunkId}`, { error: String(error) });
             await db.chunks.update(chunkId, { status: 'failed_tts' });
             throw error; 
         }

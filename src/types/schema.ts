@@ -16,18 +16,6 @@ export const ProjectSchema = z.object({
 
 export const ChunkStatusSchema = z.enum(['pending', 'processing', 'generated', 'failed_tts']);
 
-export const AudioAssetSchema = z.object({
-  id: z.number().optional(),
-  textHash: z.string(), 
-  voiceId: z.string(),
-  speed: z.number(),
-  modelId: z.string(),
-  filePath: z.string(), 
-  byteSize: z.number(),
-  durationMs: z.number().optional(), 
-  createdAt: z.date(),
-});
-
 export const ChunkSchema = z.object({
   id: z.number().optional(),
   projectId: z.number(),
@@ -35,10 +23,8 @@ export const ChunkSchema = z.object({
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),
   activeAssetId: z.number().nullable().optional(), 
-  
-  // NEW: Denormalized path for high-performance UI rendering
   generatedFilePath: z.string().nullable().optional(),
-
+  cleanTextHash: z.string(),
   voiceOverride: z.object({
     voiceId: z.string().optional(),
     speed: z.number().optional(),
@@ -58,9 +44,24 @@ export const JobSchema = z.object({
     createdAt: z.date(),
 });
 
+// --- LOGGING SCHEMA ---
+
+export const LogSeveritySchema = z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']);
+
+export const LogSchema = z.object({
+    id: z.number().optional(),
+    timestamp: z.date(),
+    severity: LogSeveritySchema,
+    component: z.string(),
+    message: z.string(),
+    context: z.any().optional(),
+});
+
+// Exporting types separately using type keyword for clarity
 export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type Chunk = z.infer<typeof ChunkSchema>;
 export type ChunkStatus = z.infer<typeof ChunkStatusSchema>;
-export type AudioAsset = z.infer<typeof AudioAssetSchema>;
 export type Job = z.infer<typeof JobSchema>;
+export type LogSeverity = z.infer<typeof LogSeveritySchema>;
+export type LogEntry = z.infer<typeof LogSchema>;
