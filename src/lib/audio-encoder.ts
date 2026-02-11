@@ -1,9 +1,10 @@
+import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 import { logger } from '../services/Logger';
 
 /**
  * AudioEncoder Service
- * Uses WebCodecs for high-performance encoding.
- * Fallback uses a standard RIFF WAVE implementation.
+ * CRITICAL: Upgraded to use WebCodecs + webm-muxer for high-performance Opus encoding.
+ * This ensures audio assets are compressed (small storage footprint) and seekable.
  */
 export class AudioEncoderService {
     static get isSupported() {
@@ -11,38 +12,40 @@ export class AudioEncoderService {
     }
 
     static async encode(samples: Float32Array, sampleRate: number): Promise<Blob> {
-        // Preferred: WebCodecs (Opus)
-        if (this.isSupported) {
-            try {
-                return await this.encodeOpus(samples, sampleRate);
-            } catch (err) {
-                logger.warn('AudioEncoder', 'Opus encoding failed, falling back to WAV', err);
-            }
-        } else {
-            logger.info('AudioEncoder', 'WebCodecs not supported, using WAV fallback.');
+        if (!this.isSupported) {
+            logger.warn('AudioEncoder', 'WebCodecs not supported, using fallback');
+            return this.encodeWavFallback(samples, sampleRate);
         }
 
-        // Fallback: Canonical WAV
-        return this.encodeWav(samples, sampleRate);
-    }
-
-    private static async encodeOpus(samples: Float32Array, sampleRate: number): Promise<Blob> {
-        return new Promise((resolve, reject) => {
-            const chunks: Uint8Array[] = [];
-            const encoder = new AudioEncoder({
-                output: (chunk) => {
-                    const data = new Uint8Array(chunk.byteLength);
-                    chunk.copyTo(data);
-                    chunks.push(data);
+        try {
+            const muxer = new Muxer({
+                target: new ArrayBufferTarget(),
+                video: null,
+                audio: {
+                    codec: 'V_OPUS',
+                    sampleRate: sampleRate,
+                    numberOfChannels: 1,
                 },
-                error: (e) => reject(e)
             });
 
+            const encoder = new AudioEncoder({
+                output: (chunk, metadata) => muxer.addSample({
+                    type: 'audio',
+                    data: chunk.data,
+                    timestamp: chunk.timestamp,
+                    duration: chunk.duration || 0,
+                    keyFrame: true
+                }),
+                error: (e) => { throw e; }
+            });
+
+            // Opus expects 48kHz usually, but WebCodecs handles many rates.
+            // We use the model's native sample rate to avoid resampling artifacts.
             encoder.configure({
                 codec: 'opus',
                 sampleRate: sampleRate,
                 numberOfChannels: 1,
-                bitrate: 128_000, 
+                bitrate: 128_000,
             });
 
             const audioData = new AudioData({
@@ -55,59 +58,51 @@ export class AudioEncoderService {
             });
 
             encoder.encode(audioData);
-            encoder.flush().then(() => {
-                encoder.close();
-                resolve(new Blob(chunks, { type: 'audio/webm; codecs=opus' }));
-            });
-        });
+            await encoder.flush();
+            encoder.close();
+            muxer.finalize();
+
+            return new Blob([muxer.target.buffer], { type: 'audio/webm; codecs=opus' });
+        } catch (err) {
+            logger.error('AudioEncoder', 'WebM encoding failed', err);
+            return this.encodeWavFallback(samples, sampleRate);
+        }
     }
 
     /**
      * Standard RIFF WAVE Encoding (Linear PCM 16-bit)
-     * Follows the canonical spec to ensure maximum compatibility.
+     * Maintained as a robust fallback for legacy environments.
      */
-    private static encodeWav(samples: Float32Array, sampleRate: number): Blob {
+    private static encodeWavFallback(samples: Float32Array, sampleRate: number): Blob {
         const buffer = new ArrayBuffer(44 + samples.length * 2);
         const view = new DataView(buffer);
 
-        // RIFF chunk descriptor
-        this.writeString(view, 0, 'RIFF');
-        view.setUint32(4, 36 + samples.length * 2, true); // file length - 8
-        this.writeString(view, 8, 'WAVE');
+        const writeString = (offset: number, string: string) => {
+            for (let i = 0; i < string.length; i++) {
+                view.setUint8(offset + i, string.charCodeAt(i));
+            }
+        };
 
-        // fmt sub-chunk
-        this.writeString(view, 12, 'fmt ');
-        view.setUint32(16, 16, true);       // Subchunk1Size (16 for PCM)
-        view.setUint16(20, 1, true);        // AudioFormat (1 = PCM)
-        view.setUint16(22, 1, true);        // NumChannels (1 = Mono)
-        view.setUint32(24, sampleRate, true); // SampleRate
-        view.setUint32(28, sampleRate * 2, true); // ByteRate (SampleRate * BlockAlign)
-        view.setUint16(32, 2, true);        // BlockAlign (NumChannels * BitsPerSample/8)
-        view.setUint16(34, 16, true);       // BitsPerSample
+        writeString(0, 'RIFF');
+        view.setUint32(4, 36 + samples.length * 2, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeString(36, 'data');
+        view.setUint32(40, samples.length * 2, true);
 
-        // data sub-chunk
-        this.writeString(view, 36, 'data');
-        view.setUint32(40, samples.length * 2, true); // Subchunk2Size
-
-        // Write PCM samples (Float32 -> Int16)
-        this.floatTo16BitPCM(view, 44, samples);
+        // Float32 -> Int16
+        for (let i = 0; i < samples.length; i++) {
+            let s = Math.max(-1, Math.min(1, samples[i]));
+            view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
 
         return new Blob([view], { type: 'audio/wav' });
-    }
-
-    private static writeString(view: DataView, offset: number, string: string) {
-        for (let i = 0; i < string.length; i++) {
-            view.setUint8(offset + i, string.charCodeAt(i));
-        }
-    }
-
-    private static floatTo16BitPCM(output: DataView, offset: number, input: Float32Array) {
-        for (let i = 0; i < input.length; i++, offset += 2) {
-            // Clamp to [-1, 1]
-            let s = Math.max(-1, Math.min(1, input[i]));
-            // Scale to 16-bit signed integer range
-            s = s < 0 ? s * 0x8000 : s * 0x7FFF;
-            output.setInt16(offset, s, true);
-        }
     }
 }

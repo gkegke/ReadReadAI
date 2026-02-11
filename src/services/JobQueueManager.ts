@@ -1,101 +1,57 @@
-import { db } from '../db';
-import { AudioGenerationService } from './AudioGenerationService';
-import { liveQuery, Subscription } from 'dexie';
+import * as Comlink from 'comlink';
+import ManagerWorker from '../workers/manager.worker?worker';
 import { logger } from './Logger';
+import { useSystemStore } from '../store/useSystemStore';
 
+/**
+ * JobQueueManager (V2)
+ * CRITICAL: UI-Thread Proxy.
+ */
 class JobQueueManager {
-    private subscription: Subscription | null = null;
-    private isLocked = false;
+    private worker: any = null;
 
     constructor() {
-        this.init();
+        // We delay init slightly to allow Hydration of stores
+        setTimeout(() => this.init(), 1000);
     }
 
-    private init() {
-        this.cleanupStuckJobs().then(() => {
-             const pendingJobQuery = liveQuery(() => 
-                db.jobs.where('status').equals('pending').count()
-            );
-
-            this.subscription = pendingJobQuery.subscribe({
-                next: (count) => {
-                    if (count > 0 && !this.isLocked) {
-                        logger.debug('JobQueue', `Detected ${count} pending jobs.`);
-                        this.attemptProcess();
-                    }
-                },
-                error: (err) => logger.error('JobQueue', 'Subscription error', err)
-            });
-        });
-    }
-
-    private async attemptProcess() {
-        if (!navigator.locks) { 
-            this.processQueue(); 
-            return; 
-        }
-
-        navigator.locks.request('readread-queue-processor', { ifAvailable: true }, async (lock) => {
-            if (!lock) return;
-            this.isLocked = true;
-            await this.processQueue();
-            this.isLocked = false;
-        });
-    }
-
-    private async processQueue() {
-        const job = await db.jobs
-            .where('status').equals('pending')
-            .reverse().sortBy('priority')
-            .then(list => list[0]);
-
-        if (!job) return;
-
+    private async init() {
         try {
-            await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
-            await AudioGenerationService.generate(job.chunkId);
-            await db.jobs.delete(job.id!);
-        } catch (error) {
-            logger.error('JobQueue', `Job ${job.id} failed`, { error: String(error) });
-            const fresh = await db.jobs.get(job.id!);
-            if (fresh) {
-                if (fresh.retryCount >= 3) {
-                    await db.jobs.update(job.id!, { status: 'failed' });
-                } else {
-                    await db.jobs.update(job.id!, { 
-                        status: 'pending', 
-                        retryCount: fresh.retryCount + 1,
-                        priority: 0 
-                    });
-                }
-            }
-        } finally {
-            const nextCount = await db.jobs.where('status').equals('pending').count();
-            if (nextCount > 0) await this.processQueue();
+            const rawWorker = new ManagerWorker();
+            this.worker = Comlink.wrap(rawWorker);
+            
+            // Get the preferred model from the system store (persisted in localStorage)
+            // Since this runs in the UI thread, we can access the store.
+            const { activeModelId } = useSystemStore.getState();
+
+            // Start the background orchestrator with the correct model
+            await this.worker.start(activeModelId);
+            logger.info('JobQueue', 'Background Orchestrator Started', { activeModelId });
+        } catch (err) {
+            logger.error('JobQueue', 'Failed to start background worker', err);
         }
     }
 
-    private async cleanupStuckJobs() {
-        const TWO_MINUTES = 2 * 60 * 1000;
-        const cutoff = new Date(Date.now() - TWO_MINUTES);
-        
-        const stuckJobs = await db.jobs
-            .where('status').equals('processing')
-            .filter(j => j.createdAt < cutoff)
-            .toArray();
+    /**
+     * Allows UI to manually trigger a re-scan (e.g., after user edit)
+     */
+    public async poke() {
+        if (this.worker) await this.worker.checkNow();
+    }
 
-        if (stuckJobs.length > 0) {
-            logger.warn('JobQueue', `Resetting ${stuckJobs.length} zombie jobs.`);
-            await db.jobs.bulkPut(stuckJobs.map(j => ({ 
-                ...j, 
-                status: 'pending', 
-                priority: Math.max(0, j.priority - 1) 
-            })));
+    /**
+     * Restart the worker if model changes
+     */
+    public async restart(newModelId: string) {
+        if (this.worker) {
+            await this.worker.stop();
+            // Re-initialize with new model
+            await this.worker.start(newModelId);
         }
     }
 
     public stop() {
-        this.subscription?.unsubscribe();
+        if (this.worker) this.worker.stop();
     }
 }
 

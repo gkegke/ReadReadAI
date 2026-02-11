@@ -34,8 +34,33 @@ export const useProject = (id: number | null) => {
 // --- CHUNKS ---
 
 /**
- * Optimized for heavy lists. Returns only IDs to prevent re-rendering 
- * the entire list when a single chunk updates.
+ * CRITICAL: Bulk Data Fetch (For Timeline)
+ * Returns the full Chunk objects for a project in a single reactive query.
+ * Used by Timeline.tsx to prevent the N+1 query problem.
+ */
+export const useProjectChunks = (projectId: number | null) => {
+    const data = useLiveQuery(
+        async () => {
+            if (projectId === null) return [];
+            return await db.chunks
+                .where('projectId')
+                .equals(projectId)
+                .sortBy('orderInProject');
+        },
+        [projectId]
+    );
+    
+    return {
+        data: data || [],
+        isLoading: projectId !== null && data === undefined
+    };
+};
+
+/**
+ * Optimized for Navigation (For PlayerControls/Sidebar)
+ * Returns only an array of IDs. 
+ * This is better for navigation UI as it doesn't trigger re-renders 
+ * when a chunk's text or synthesis status updates.
  */
 export const useProjectChunkIds = (projectId: number | null) => {
     const data = useLiveQuery(
@@ -44,8 +69,8 @@ export const useProjectChunkIds = (projectId: number | null) => {
             const chunks = await db.chunks
                 .where('projectId')
                 .equals(projectId)
-                .sortBy('orderInProject');
-            return chunks.map(c => c.id!);
+                .primaryKeys(); // More efficient than fetching objects and mapping
+            return chunks as number[];
         },
         [projectId]
     );
@@ -69,11 +94,6 @@ export const useChunk = (chunkId: number) => {
 
 // --- JOBS & SYSTEM STATUS ---
 
-/**
- * Reactive Global Job Status
- * Replaces manual 'isProcessing' flags. 
- * Detects if the background worker has pending items in the queue.
- */
 export const useGlobalJobStatus = () => {
     const status = useLiveQuery(async () => {
         const pendingCount = await db.jobs

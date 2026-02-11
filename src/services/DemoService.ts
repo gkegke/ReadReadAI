@@ -1,15 +1,11 @@
 import { db } from '../db';
 import { useProjectStore } from '../store/useProjectStore';
 import { hashText } from '../lib/text-processor';
-import { ProjectRepository } from '../repositories/ProjectRepository';
 
 const DEMO_CONTENT = [
     "Welcome to ReadReadAI! This is a fully offline, browser-based text-to-speech application.",
     "Everything you see and hear is happening right on your device. No data is sent to the cloud.",
-    "You can import PDF or Text files using the button on the dashboard.",
-    "The audio is generated using a high-performance AI model running in your browser via WebAssembly.",
-    "Try clicking on a chunk to edit the text, or use the split and merge tools to adjust the flow.",
-    "Enjoy listening to your documents private and offline!"
+    "The audio is generated using a high-performance AI model running in your browser via WebAssembly."
 ];
 
 export const DemoService = {
@@ -17,13 +13,11 @@ export const DemoService = {
         const count = await db.projects.count();
         if (count > 0) return;
 
-        console.log("Initializing Demo Project...");
-
         const projectId = await db.projects.add({
             name: "Welcome to ReadReadAI",
             createdAt: new Date(),
             updatedAt: new Date(),
-            voiceSettings: { voiceId: 'af_sarah', speed: 1.0 }
+            voiceSettings: { voiceId: 'af_heart', speed: 1.0 }
         });
 
         const chunks = DEMO_CONTENT.map((text, index) => ({
@@ -37,14 +31,17 @@ export const DemoService = {
         }));
 
         await db.chunks.bulkAdd(chunks);
-        useProjectStore.getState().setActiveProject(projectId);
         
-        setTimeout(() => {
-             db.chunks.where({ projectId }).first().then(chunk => {
-                 if(chunk && chunk.id) {
-                     ProjectRepository.generateChunkAudio(chunk.id);
-                 }
-             });
-        }, 1000);
+        // CRITICAL: We also need to add jobs so the JobQueue picks them up
+        const jobs = chunks.map((_, index) => ({
+            chunkId: index + 1, // Dexie auto-inc starts at 1
+            projectId,
+            status: 'pending' as const,
+            priority: 10,
+            createdAt: new Date()
+        }));
+        await db.jobs.bulkAdd(jobs);
+
+        useProjectStore.getState().setActiveProject(projectId);
     }
 };

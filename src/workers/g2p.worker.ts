@@ -1,104 +1,72 @@
 import ESpeakNg from 'espeak-ng';
 
-// Define the interface for the Emscripten Module Interaction
-interface ESpeakModule {
-    FS: {
-        readFile: (path: string, opts: { encoding: string }) => string;
-        unlink: (path: string) => void;
-        mkdir: (path: string) => void;
-        analyzePath: (path: string) => { exists: boolean };
+let modulePromise: Promise<any> | null = null;
+
+function getModule(): Promise<any> {
+    if (modulePromise) return modulePromise;
+
+    const ModuleConfig = {
+        locateFile: (path: string) => {
+            if (path.endsWith('.wasm')) return '/wasm/espeak-ng.wasm';
+            return path;
+        },
+        noInitialRun: true,
+        print: () => {}, // Silence stdout
+        printErr: (text: string) => {
+            if (!text.includes('Aborted')) console.warn(`[espeak-err] ${text}`);
+        }
     };
+
+    // @ts-ignore
+    modulePromise = ESpeakNg(ModuleConfig);
+    return modulePromise!;
 }
 
 /**
- * CRITICAL
- * Runs espeak-ng in a "One-Shot" mode.
- * The installed WASM build does not export `callMain`, so we cannot reuse the instance.
- * Instead, we instantiate it fresh for every request, pass arguments via config,
- * and extract the result from the virtual filesystem in the postRun hook.
+ * Correctly invokes Emscripten _main by allocating a C-style argv array
  */
 async function runEspeak(text: string, lang: string): Promise<string> {
+    const mod = await getModule();
     const id = Math.random().toString(36).substring(7);
     const outputFilename = `/tmp/out_${id}`;
     
-    // Command line arguments for espeak-ng
-    // Note: 'arguments' in Emscripten config maps to argv[1]...argv[n]
-    const args = ['--ipa=3', '-v', lang, '-q', '--phonout', outputFilename, text];
+    // Arguments for espeak-ng
+    const args = ['espeak-ng', '--ipa=3', '-v', lang, '-q', '--phonout', outputFilename, text];
 
-    return new Promise((resolve, reject) => {
-        let result: string | null = null;
+    // 1. Prepare Arguments in WASM Memory
+    const argc = args.length;
+    const argv = mod._malloc(argc * 4); // 4 bytes per pointer (32-bit WASM)
 
-        const ModuleConfig = {
-            // Pass arguments to the main() function of the C program
-            arguments: args,
-            
-            // Locate the .wasm file explicitly
-            locateFile: (path: string) => {
-                if (path.endsWith('.wasm')) {
-                    return '/wasm/espeak-ng.wasm';
-                }
-                return path;
-            },
-            
-            // Allow main to run automatically
-            noInitialRun: false, 
-
-            // Setup the virtual filesystem before main runs
-            preRun: [(module: any) => {
-                try {
-                    // Ensure /tmp exists
-                    if (module.FS && !module.FS.analyzePath('/tmp').exists) {
-                         module.FS.mkdir('/tmp');
-                    }
-                } catch (e) { /* Ignore if it fails, likely exists or not ready */ }
-            }],
-
-            // Capture output after main finishes
-            postRun: [(module: any) => {
-                try {
-                    if (module.FS.analyzePath(outputFilename).exists) {
-                        const raw = module.FS.readFile(outputFilename, { encoding: 'utf8' });
-                        // Clean up
-                        module.FS.unlink(outputFilename);
-                        result = raw.trim().replace(/\n/g, ' ');
-                    }
-                } catch (e) {
-                    console.warn("[espeak] Failed to read output file", e);
-                }
-            }],
-
-            print: (text: string) => {
-                 if(text.includes('Error')) console.warn("[espeak]", text);
-            },
-            printErr: (text: string) => {
-                 // Suppress the Aborted warning if it's just about the exit status
-                 if (!text.includes('Aborted')) console.warn("[espeak-err]", text);
-            }
-        };
-
-        // Instantiate
-        // @ts-ignore
-        ESpeakNg(ModuleConfig).then((_module) => {
-            // By the time the promise resolves, main() usually has run.
-            // However, relying on postRun is safer for data extraction.
-            if (result !== null) {
-                resolve(result);
-            } else {
-                // If postRun didn't capture it, try one last check (rare race condition safeguard)
-                try {
-                    if (_module.FS.analyzePath(outputFilename).exists) {
-                        const raw = _module.FS.readFile(outputFilename, { encoding: 'utf8' });
-                        resolve(raw.trim().replace(/\n/g, ' '));
-                        return;
-                    }
-                } catch(e) {}
-                
-                reject(new Error("Phonemization failed: No output generated."));
-            }
-        }).catch((err: any) => {
-            reject(err);
-        });
+    const argPointers: number[] = [];
+    args.forEach((arg, i) => {
+        const ptr = mod._malloc(arg.length + 1);
+        mod.writeAsciiToMemory(arg, ptr);
+        mod.setValue(argv + i * 4, ptr, 'i32');
+        argPointers.push(ptr);
     });
+
+    try {
+        // 2. Ensure virtual filesystem structure
+        if (!mod.FS.analyzePath('/tmp').exists) {
+            mod.FS.mkdir('/tmp');
+        }
+
+        // 3. Execute main
+        mod._main(argc, argv);
+
+        // 4. Read results
+        if (mod.FS.analyzePath(outputFilename).exists) {
+            const raw = mod.FS.readFile(outputFilename, { encoding: 'utf8' });
+            mod.FS.unlink(outputFilename);
+            return raw.trim().replace(/\n/g, ' ');
+        } else {
+            throw new Error("G2P: No output file generated.");
+        }
+    } finally {
+        // 5. Cleanup memory to avoid leaks
+        argPointers.forEach(ptr => mod._free(ptr));
+        mod._free(argv);
+    }
 }
 
 self.onmessage = async (e: MessageEvent) => {
@@ -109,8 +77,8 @@ self.onmessage = async (e: MessageEvent) => {
         const phonemes = await runEspeak(text, lang);
         postMessage({ id, phonemes });
     } catch (err) {
-        console.warn(`[G2P Worker] Failed for "${text.slice(0,15)}...", using fallback.`, err);
-        // Fallback: simple normalization to prevent pipeline stall
+        console.error(`[G2P Worker] Execution error`, err);
+        // Fallback: simplified clean text
         const fallback = text.toLowerCase().replace(/[^a-z0-9\s]/g, '');
         postMessage({ id, phonemes: fallback });
     }

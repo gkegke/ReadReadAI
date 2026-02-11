@@ -7,7 +7,6 @@ interface WaveformPlayerProps {
     blob: Blob;
     isActive: boolean;
     chunkId: number;
-    onEnded?: () => void;
 }
 
 export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, chunkId }) => {
@@ -16,7 +15,6 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
     
     // Subscribe to specific store slices for high-performance updates
     const currentTime = useAudioStore(state => state.activeChunkId === chunkId ? state.currentTime : 0);
-    const isPlaying = useAudioStore(state => state.activeChunkId === chunkId && state.isPlaying);
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -38,21 +36,21 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
 
         wavesurferRef.current = ws;
 
-        // Load the audio and handle potential failures
+        // CRITICAL: Handle the AbortError caused by React Strict Mode or rapid unmounts
         ws.load(blobUrl).catch(err => {
+            if (err.name === 'AbortError') {
+                // Ignore intentional aborts during component unmount
+                return;
+            }
             if (!isDestroyed) {
-                console.error(`[Waveform] Failed to load blob for chunk ${chunkId}:`, err);
+                console.error(`[Waveform] Failed to load audio for chunk ${chunkId}:`, err);
             }
         });
 
         ws.on('interaction', (newTime) => {
-            if (isActive) {
-                audioPlaybackService.seek(newTime);
-            } else {
-                useAudioStore.getState().setActiveChunkId(chunkId);
-                useAudioStore.getState().setIsPlaying(true);
-                audioPlaybackService.playChunk(chunkId, blob, newTime);
-            }
+            // Trigger the Web Audio Playback logic
+            // Note: We pass the blob so the service can decode it if it's not already in memory
+            audioPlaybackService.playChunk(chunkId, blob, newTime);
         });
 
         return () => {
@@ -61,9 +59,9 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
             URL.revokeObjectURL(blobUrl);
             wavesurferRef.current = null;
         };
-    }, [blob, chunkId]); // Re-init only if blob or chunk identity changes
+    }, [blob, chunkId]); // Re-init only if data identity changes
 
-    // Update Visuals without re-mounting
+    // Update Visuals (colors) without re-mounting the whole instance
     useEffect(() => {
         if (wavesurferRef.current) {
             wavesurferRef.current.setOptions({
@@ -72,12 +70,13 @@ export const WaveformPlayer: React.FC<WaveformPlayerProps> = ({ blob, isActive, 
         }
     }, [isActive]);
 
-    // Sync Playhead
+    // Sync Playhead from Global Audio Context clock
     useEffect(() => {
         const ws = wavesurferRef.current;
         if (!ws || !isActive) return;
         
         const wsTime = ws.getCurrentTime();
+        // Use a 100ms epsilon to prevent "fighting" between the store and the visualizer
         if (Math.abs(wsTime - currentTime) > 0.1) {
             ws.setTime(currentTime);
         }

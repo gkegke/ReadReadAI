@@ -5,13 +5,11 @@ interface AudioState {
   isPlaying: boolean;
   activeChunkId: number | null;
   playbackSpeed: number;
-  queue: number[]; 
   currentTime: number;
   duration: number;
   
   setIsPlaying: (isPlaying: boolean) => void;
   setActiveChunkId: (id: number | null) => void;
-  setQueue: (chunkIds: number[]) => void;
   setPlaybackSpeed: (speed: number) => void;
   togglePlay: () => void;
   playNext: () => void;
@@ -23,29 +21,27 @@ export const useAudioStore = create<AudioState>((set, get) => ({
   isPlaying: false,
   activeChunkId: null,
   playbackSpeed: 1.0,
-  queue: [],
   currentTime: 0,
   duration: 0,
 
   setIsPlaying: (isPlaying) => set({ isPlaying }),
-  setActiveChunkId: (id) => set({ activeChunkId: id, currentTime: 0 }),
-  setQueue: (queue) => set({ queue }),
+  setActiveChunkId: (id) => set({ activeChunkId: id }),
   
   setPlaybackSpeed: (speed) => {
       set({ playbackSpeed: speed });
-      audioPlaybackService.setSpeed(speed);
+      // Web Audio context speed adjustment would happen here in Phase 3
   },
   
-  togglePlay: () => audioPlaybackService.toggle(),
+  togglePlay: () => {
+    audioPlaybackService.toggle();
+    set(state => ({ isPlaying: !state.isPlaying }));
+  },
+  
   seek: (time) => audioPlaybackService.seek(time),
   
   playNext: () => {
-    const { queue, activeChunkId } = get();
-    if (!activeChunkId) return;
-    const idx = queue.indexOf(activeChunkId);
-    if (idx !== -1 && idx < queue.length - 1) {
-        set({ activeChunkId: queue[idx+1] });
-    }
+    // With WebAudio scheduling, "playNext" is often handled by the scheduler proactively.
+    // This hook remains for manual skip buttons.
   },
 
   setTime: (currentTime, duration) => set({ currentTime, duration })

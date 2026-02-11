@@ -7,7 +7,7 @@ import { storage } from './storage';
 interface TTSWorkerApi {
     initModel(
         modelId: string, 
-        rootHandle: undefined, // deprecated arg
+        rootHandle: undefined, 
         onProgress: (phase: string, percent: number) => void
     ): Promise<{ modelId: string, voices: {id: string, name: string}[] }>;
     
@@ -20,9 +20,13 @@ interface TTSWorkerApi {
 
 class TTSService {
   private worker: Comlink.Remote<TTSWorkerApi> | null = null;
+  // Local status tracker for Worker environments where Zustand doesn't sync with UI
+  private localStatus: ModelStatus = ModelStatus.UNLOADED;
+  private isUIContext: boolean;
 
   constructor() {
-    console.log("[TTSService] Instantiated");
+    this.isUIContext = typeof window !== 'undefined' && typeof document !== 'undefined';
+    console.log(`[TTSService] Instantiated (Context: ${this.isUIContext ? 'UI' : 'WORKER'})`);
   }
 
   private async getWorker() {
@@ -34,9 +38,13 @@ class TTSService {
   }
 
   public async loadModel(modelId: string) {
-    const store = useTTSStore.getState();
-    store.setStatus(ModelStatus.LOADING);
-    store.setThinking('Initializing Worker...', 0);
+    // Only update UI store if we are in the UI context
+    if (this.isUIContext) {
+        const store = useTTSStore.getState();
+        store.setStatus(ModelStatus.LOADING);
+        store.setThinking('Initializing Worker...', 0);
+    }
+    this.localStatus = ModelStatus.LOADING;
 
     try {
         const worker = await this.getWorker();
@@ -44,27 +52,41 @@ class TTSService {
         // Pass proxy for callbacks
         const result = await worker.initModel(
             modelId, 
-            undefined, // Worker uses opfs-tools now
+            undefined, 
             Comlink.proxy((phase, percent) => {
-                store.setThinking(phase, percent);
+                if (this.isUIContext) {
+                    useTTSStore.getState().setThinking(phase, percent);
+                }
             })
         );
 
         console.log(`[TTSService] Model ${result.modelId} ready.`);
-        store.setStatus(ModelStatus.READY);
-        store.setVoices(result.voices);
+        
+        this.localStatus = ModelStatus.READY;
+        if (this.isUIContext) {
+            const store = useTTSStore.getState();
+            store.setStatus(ModelStatus.READY);
+            store.setVoices(result.voices);
+        }
 
     } catch (e: any) {
         console.error("[TTSService] Init Failed", e);
-        store.setStatus(ModelStatus.ERROR, e.message || String(e));
+        this.localStatus = ModelStatus.ERROR;
+        if (this.isUIContext) {
+            useTTSStore.getState().setStatus(ModelStatus.ERROR, e.message || String(e));
+        }
     }
   }
 
   public async generate(text: string, config: ModelConfig, filepath: string): Promise<number> {
-    const store = useTTSStore.getState();
-    
-    if (store.modelStatus !== ModelStatus.READY) {
-         throw new Error("Model is not loaded. Please wait for initialization.");
+    // Check local status (works in both UI and Worker)
+    if (this.localStatus !== ModelStatus.READY) {
+         // If we are in the UI, we might trust the store, but localStatus is safer
+         const storeStatus = this.isUIContext ? useTTSStore.getState().modelStatus : ModelStatus.UNLOADED;
+         
+         if (this.localStatus !== ModelStatus.READY && storeStatus !== ModelStatus.READY) {
+            throw new Error(`Model is not loaded (Status: ${this.localStatus}).`);
+         }
     }
 
     const worker = await this.getWorker();

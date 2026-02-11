@@ -1,95 +1,154 @@
 import { useAudioStore } from '../store/useAudioStore';
+import { logger } from './Logger';
 
+interface ScheduledChunk {
+    chunkId: number;
+    startTime: number;
+    duration: number;
+    source: AudioBufferSourceNode;
+}
+
+/**
+ * AudioPlaybackService (V2)
+ * CRITICAL: Pivot to sample-accurate Look-ahead Scheduling.
+ * This service decoupling playback from the browser's HTMLAudio element to 
+ * ensure true gapless transitions between synthesized chunks.
+ */
 class AudioPlaybackService {
-    private audio: HTMLAudioElement;
-    private currentChunkId: number | null = null;
-    private currentBlobUrl: string | null = null;
+    private ctx: AudioContext | null = null;
+    private schedule: ScheduledChunk[] = [];
+    private nextScheduleTime: number = 0;
+    private monitorId: number | null = null;
+    private bufferCache = new Map<number, AudioBuffer>();
+
+    private get context(): AudioContext {
+        if (!this.ctx) {
+            this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        }
+        return this.ctx;
+    }
 
     constructor() {
-        this.audio = new Audio();
-        this.audio.preload = 'auto'; 
-        this.setupListeners();
+        this.startMonitor();
     }
 
-    private setupListeners() {
-        this.audio.ontimeupdate = () => {
-            useAudioStore.getState().setTime(this.audio.currentTime, this.audio.duration || 0);
+    private startMonitor() {
+        const tick = () => {
+            if (this.ctx && this.ctx.state === 'running') {
+                const now = this.ctx.currentTime;
+                // Find the chunk currently playing according to the AudioContext clock
+                const active = this.schedule.find(s => now >= s.startTime && now < s.startTime + s.duration);
+                
+                if (active) {
+                    const store = useAudioStore.getState();
+                    if (store.activeChunkId !== active.chunkId) {
+                        store.setActiveChunkId(active.chunkId);
+                    }
+                    store.setTime(now - active.startTime, active.duration);
+                } else if (this.schedule.length > 0 && now > this.schedule[this.schedule.length - 1].startTime + this.schedule[this.schedule.length - 1].duration) {
+                    this.stop();
+                    useAudioStore.getState().setIsPlaying(false);
+                }
+            }
+            this.monitorId = requestAnimationFrame(tick);
         };
-
-        this.audio.onplay = () => useAudioStore.getState().setIsPlaying(true);
-        this.audio.onpause = () => useAudioStore.getState().setIsPlaying(false);
-        this.audio.onended = () => {
-            useAudioStore.getState().setIsPlaying(false);
-            useAudioStore.getState().playNext();
-        };
-        
-        this.audio.onerror = (e) => {
-            console.error("[AudioPlayback] Element Error:", e);
-            useAudioStore.getState().setIsPlaying(false);
-        };
+        this.monitorId = requestAnimationFrame(tick);
     }
 
-    public async playChunk(chunkId: number, blob: Blob, startTime: number = 0, autoPlay: boolean = true) {
-        const store = useAudioStore.getState();
-
-        // If same chunk, just handle play/pause/seek
-        if (this.currentChunkId === chunkId && this.currentBlobUrl) {
-            if (Math.abs(this.audio.currentTime - startTime) > 0.1) {
-                this.audio.currentTime = startTime;
-            }
-            if (autoPlay && this.audio.paused) {
-                await this.audio.play().catch(e => console.warn("Autoplay blocked", e));
-            }
-            return;
-        }
-
-        // Clean up previous URL to prevent memory leaks
-        if (this.currentBlobUrl) {
-            URL.revokeObjectURL(this.currentBlobUrl);
-        }
-
-        this.currentChunkId = chunkId;
-        this.currentBlobUrl = URL.createObjectURL(blob);
+    private async decode(blob: Blob, chunkId: number): Promise<AudioBuffer> {
+        if (this.bufferCache.has(chunkId)) return this.bufferCache.get(chunkId)!;
         
-        this.audio.src = this.currentBlobUrl;
-        this.audio.playbackRate = store.playbackSpeed;
-        this.audio.currentTime = startTime;
+        const arrayBuffer = await blob.arrayBuffer();
+        const buffer = await this.context.decodeAudioData(arrayBuffer);
+        
+        // Cache management: Keep only the most recent few buffers
+        if (this.bufferCache.size > 10) this.bufferCache.clear();
+        this.bufferCache.set(chunkId, buffer);
+        
+        return buffer;
+    }
 
-        if (autoPlay) {
-            try {
-                await this.audio.play();
-            } catch (e) {
-                console.warn("[AudioPlayback] Play interrupted or blocked:", e);
+    /**
+     * Immediate playback with optional seek offset
+     */
+    public async playChunk(chunkId: number, blob: Blob, offset: number = 0) {
+        await this.context.resume();
+        this.clearSchedule();
+
+        try {
+            const buffer = await this.decode(blob, chunkId);
+            const source = this.context.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.context.destination);
+            
+            const now = this.context.currentTime;
+            source.start(now, offset);
+            
+            this.schedule.push({
+                chunkId,
+                startTime: now - offset,
+                duration: buffer.duration,
+                source
+            });
+
+            this.nextScheduleTime = now + (buffer.duration - offset);
+            useAudioStore.getState().setIsPlaying(true);
+            logger.debug('AudioPlayback', `Started playback for chunk ${chunkId}`);
+        } catch (e) {
+            logger.error('AudioPlayback', 'Failed to play chunk', e);
+        }
+    }
+
+    /**
+     * CRITICAL: Gapless Scheduling logic.
+     * Queues the next chunk to start precisely when the current one ends.
+     */
+    public async queueNextChunk(chunkId: number, blob: Blob) {
+        if (this.schedule.some(s => s.chunkId === chunkId)) return;
+
+        try {
+            const buffer = await this.decode(blob, chunkId);
+            const source = this.context.createBufferSource();
+            source.buffer = buffer;
+            source.connect(this.context.destination);
+
+            // If we've fallen behind, start from now
+            if (this.nextScheduleTime < this.context.currentTime) {
+                this.nextScheduleTime = this.context.currentTime;
             }
+
+            source.start(this.nextScheduleTime);
+            
+            this.schedule.push({
+                chunkId,
+                startTime: this.nextScheduleTime,
+                duration: buffer.duration,
+                source
+            });
+
+            this.nextScheduleTime += buffer.duration;
+            logger.debug('AudioPlayback', `Scheduled gapless transition to chunk ${chunkId}`);
+        } catch (e) {
+            logger.error('AudioPlayback', 'Failed to queue next chunk', e);
         }
     }
 
     public toggle() {
-        if (this.audio.paused && this.audio.src) {
-            this.audio.play().catch(() => {});
-        } else {
-            this.audio.pause();
-        }
-    }
-
-    public seek(time: number) {
-        if (isFinite(time) && this.audio.duration) {
-            this.audio.currentTime = time;
-        }
-    }
-
-    public setSpeed(speed: number) {
-        this.audio.playbackRate = speed;
+        if (this.context.state === 'running') this.context.suspend();
+        else this.context.resume();
     }
 
     public stop() {
-        this.audio.pause();
-        this.audio.currentTime = 0;
-        if (this.currentBlobUrl) {
-            URL.revokeObjectURL(this.currentBlobUrl);
-            this.currentBlobUrl = null;
-        }
-        this.currentChunkId = null;
+        this.clearSchedule();
+        this.nextScheduleTime = 0;
+        this.bufferCache.clear();
+    }
+
+    private clearSchedule() {
+        this.schedule.forEach(s => {
+            try { s.source.stop(); s.source.disconnect(); } catch (e) {}
+        });
+        this.schedule = [];
     }
 }
 
