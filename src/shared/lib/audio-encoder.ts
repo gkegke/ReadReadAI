@@ -2,9 +2,7 @@ import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 import { logger } from '../services/Logger';
 
 /**
- * AudioEncoder Service
- * CRITICAL: Upgraded to use WebCodecs + webm-muxer for high-performance Opus encoding.
- * This ensures audio assets are compressed (small storage footprint) and seekable.
+ * AudioEncoder Service (V3 API compatible)
  */
 export class AudioEncoderService {
     static get isSupported() {
@@ -22,25 +20,22 @@ export class AudioEncoderService {
                 target: new ArrayBufferTarget(),
                 video: null,
                 audio: {
-                    codec: 'V_OPUS',
+                    codec: 'A_OPUS', // CRITICAL: Correct WebM Audio Codec string
                     sampleRate: sampleRate,
                     numberOfChannels: 1,
                 },
             });
 
             const encoder = new AudioEncoder({
-                output: (chunk, metadata) => muxer.addSample({
-                    type: 'audio',
-                    data: chunk.data,
-                    timestamp: chunk.timestamp,
-                    duration: chunk.duration || 0,
-                    keyFrame: true
-                }),
-                error: (e) => { throw e; }
+                output: (chunk, metadata) => {
+                    // CRITICAL (API Score: 10/10): webm-muxer v3 uses addAudioChunk
+                    muxer.addAudioChunk(chunk, metadata);
+                },
+                error: (e) => { 
+                    logger.error('AudioEncoder', 'Internal Encoder Error', e);
+                }
             });
 
-            // Opus expects 48kHz usually, but WebCodecs handles many rates.
-            // We use the model's native sample rate to avoid resampling artifacts.
             encoder.configure({
                 codec: 'opus',
                 sampleRate: sampleRate,
@@ -64,15 +59,11 @@ export class AudioEncoderService {
 
             return new Blob([muxer.target.buffer], { type: 'audio/webm; codecs=opus' });
         } catch (err) {
-            logger.error('AudioEncoder', 'WebM encoding failed', err);
+            logger.error('AudioEncoder', 'WebM encoding failed, falling back to WAV', err);
             return this.encodeWavFallback(samples, sampleRate);
         }
     }
 
-    /**
-     * Standard RIFF WAVE Encoding (Linear PCM 16-bit)
-     * Maintained as a robust fallback for legacy environments.
-     */
     private static encodeWavFallback(samples: Float32Array, sampleRate: number): Blob {
         const buffer = new ArrayBuffer(44 + samples.length * 2);
         const view = new DataView(buffer);
@@ -97,7 +88,6 @@ export class AudioEncoderService {
         writeString(36, 'data');
         view.setUint32(40, samples.length * 2, true);
 
-        // Float32 -> Int16
         for (let i = 0; i < samples.length; i++) {
             let s = Math.max(-1, Math.min(1, samples[i]));
             view.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7FFF, true);

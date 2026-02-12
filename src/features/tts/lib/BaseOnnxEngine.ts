@@ -1,6 +1,6 @@
 import * as ort from 'onnxruntime-web';
 import { TTSEngine } from './types';
-import { cachedFetch, cleanTextForTTS } from './utils'; // FIXED PATH: Points to sibling utils.ts
+import { cachedFetch, cleanTextForTTS } from './utils';
 import { g2pService } from '../services/G2PService'; 
 
 ort.env.wasm.wasmPaths = {
@@ -9,6 +9,10 @@ ort.env.wasm.wasmPaths = {
     'ort-wasm.wasm': '/onnx-runtime/ort-wasm.wasm',
     'ort-wasm-simd-threaded.jsep.wasm': '/onnx-runtime/ort-wasm-simd-threaded.jsep.wasm',
 };
+
+// Suppression of CPU Vendor warning logs
+// @ts-ignore
+ort.env.logLevel = 'error';
 
 export abstract class BaseOnnxEngine extends TTSEngine {
     protected session: ort.InferenceSession | null = null;
@@ -20,6 +24,8 @@ export abstract class BaseOnnxEngine extends TTSEngine {
             
             this.session = await ort.InferenceSession.create(modelBuffer, {
                 executionProviders: ['wasm'],
+                // Add optimization hint to reduce SIMD warnings
+                graphOptimizationLevel: 'all',
             });
         } catch (e) {
             console.error(`[BaseOnnxEngine] Failed to load model: ${modelPath}`, e);
@@ -29,7 +35,6 @@ export abstract class BaseOnnxEngine extends TTSEngine {
 
     protected async getPhonemes(text: string, lang: string = 'en-us'): Promise<string> {
         const cleaned = cleanTextForTTS(text);
-        // Use the singleton instance
         return await g2pService.phonemize(cleaned, lang);
     }
 
