@@ -1,3 +1,4 @@
+// [FILE: /web/src/shared/services/storage/OpfsStorage.ts]
 import type { StorageService } from './types';
 
 export class OpfsStorageService implements StorageService {
@@ -62,17 +63,35 @@ export class OpfsStorageService implements StorageService {
     const fileName = parts.pop()!;
     let currentDir = root;
 
-    for (const part of parts) {
-      currentDir = await currentDir.getDirectoryHandle(part);
+    try {
+      for (const part of parts) {
+        currentDir = await currentDir.getDirectoryHandle(part);
+      }
+      await currentDir.removeEntry(fileName);
+    } catch (e) {
+        // Ignore if file doesn't exist
+        console.warn(`[OpfsStorage] Delete failed for ${path}`, e);
     }
-    await currentDir.removeEntry(fileName);
   }
 
+  // [CRITICAL FIX] Correctly traverse directory tree before deletion
   async deleteDirectory(path: string): Promise<void> {
     const root = await this.getRootHandle();
     if (!root) return;
+
+    const parts = path.split('/').filter(Boolean);
+    // If it's a top-level folder, we can delete directly from root
+    if (parts.length === 0) return;
+
+    const dirName = parts.pop()!;
+    let parentDir = root;
+
     try {
-        await root.removeEntry(path, { recursive: true });
+        // Traverse to the parent of the directory we want to delete
+        for (const part of parts) {
+            parentDir = await parentDir.getDirectoryHandle(part);
+        }
+        await parentDir.removeEntry(dirName, { recursive: true });
     } catch (e) {
         console.warn(`[OpfsStorage] Could not delete directory ${path}`, e);
     }

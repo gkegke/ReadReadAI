@@ -6,7 +6,38 @@ import { useServices } from '../../../shared/context/ServiceContext';
 import { WaveformPlayer } from './WaveformPlayer';
 import { WaveformCanvas } from './WaveformCanvas';
 import { PlaybackState } from '../services/AudioPlaybackService';
+import { cva } from 'class-variance-authority';
 import type { Chunk } from '../../../shared/types/schema';
+
+/**
+ * [MAINTAINABILITY] Chunk UI Variants
+ */
+const chunkVariants = {
+    container: cva(
+        "group relative pl-6 border-l-2 py-4 transition-all",
+        {
+            variants: {
+                active: {
+                    true: "border-primary",
+                    false: "border-transparent hover:border-border"
+                }
+            },
+            defaultVariants: { active: false }
+        }
+    ),
+    card: cva(
+        "rounded-xl p-5 border transition-all",
+        {
+            variants: {
+                active: {
+                    true: "bg-secondary/30 border-border shadow-sm",
+                    false: "border-transparent hover:bg-secondary/10"
+                }
+            },
+            defaultVariants: { active: false }
+        }
+    )
+};
 
 interface ChunkItemProps {
   chunk: Chunk;
@@ -40,14 +71,8 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
   };
 
   return (
-    <div className={cn(
-        "group relative pl-6 border-l-2 py-4 transition-all", 
-        isActive ? "border-primary" : "border-transparent hover:border-border"
-    )}>
-      <div className={cn(
-          "rounded-xl p-5 border transition-all",
-          isActive ? "bg-secondary/30 border-border shadow-sm" : "border-transparent hover:bg-secondary/10"
-      )}>
+    <div className={chunkVariants.container({ active: isActive })}>
+      <div className={chunkVariants.card({ active: isActive })}>
         <p className="text-lg font-serif leading-relaxed mb-4">{chunk.textContent}</p>
         
         <div className="h-12 flex items-center">

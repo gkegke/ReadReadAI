@@ -4,6 +4,25 @@ import { useProjects } from '../../../shared/hooks/useQueries';
 import { ProjectRepository } from '../api/ProjectRepository';
 import { Plus, Trash2, FileText, ChevronRight, Loader2 } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
+import { cva, type VariantProps } from 'class-variance-authority';
+
+/**
+ * [MAINTAINABILITY] Sidebar UI Variants
+ */
+const sidebarItemVariants = cva(
+    "group flex items-center justify-between px-3 py-2.5 rounded-lg text-xs cursor-pointer transition-all",
+    {
+        variants: {
+            state: {
+                active: "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-bold",
+                inactive: "text-muted-foreground hover:bg-secondary hover:text-foreground",
+            }
+        },
+        defaultVariants: {
+            state: "inactive"
+        }
+    }
+);
 
 export const Sidebar: React.FC = () => {
   const { data: projects, isLoading } = useProjects();
@@ -55,42 +74,40 @@ export const Sidebar: React.FC = () => {
              <div className="px-3 py-4 flex justify-center">
                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
              </div>
-          ) : projects.map((project) => (
-            <div
-              key={project.id}
-              className={cn(
-                "group flex items-center justify-between px-3 py-2.5 rounded-lg text-xs cursor-pointer transition-all",
-                activeProjectId === project.id 
-                  ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-bold" 
-                  : "text-muted-foreground hover:bg-secondary hover:text-foreground"
-              )}
-              onClick={() => setActiveProject(project.id!)}
-            >
-              <div className="flex items-center gap-2 truncate">
-                <FileText className={cn("w-3.5 h-3.5", activeProjectId === project.id ? "opacity-100" : "opacity-40")} />
-                <span className="truncate">{project.name}</span>
-              </div>
-              {activeProjectId === project.id ? (
-                  <ChevronRight className="w-3 h-3" />
-              ) : (
-                <button
-                    onClick={(e) => {
-                    e.stopPropagation();
-                    if(confirm('Delete project?')) ProjectRepository.deleteProject(project.id!);
-                    }}
-                    className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+          ) : projects.map((project) => {
+            const isActive = activeProjectId === project.id;
+            return (
+                <div
+                key={project.id}
+                className={sidebarItemVariants({ state: isActive ? 'active' : 'inactive' })}
+                onClick={() => setActiveProject(project.id!)}
                 >
-                    <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          ))}
+                <div className="flex items-center gap-2 truncate">
+                    <FileText className={cn("w-3.5 h-3.5", isActive ? "opacity-100" : "opacity-40")} />
+                    <span className="truncate">{project.name}</span>
+                </div>
+                {isActive ? (
+                    <ChevronRight className="w-3 h-3" />
+                ) : (
+                    <button
+                        onClick={(e) => {
+                        e.stopPropagation();
+                        if(confirm('Delete project?')) ProjectRepository.deleteProject(project.id!);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 hover:text-destructive transition-opacity"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                )}
+                </div>
+            );
+          })}
         </div>
 
         <div className="p-4 border-t border-border bg-secondary/10">
             <div className="flex flex-col gap-1">
                 <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">Version</div>
-                <div className="text-[10px] font-mono opacity-50">v0.8.0 (Feature Sliced)</div>
+                <div className="text-[10px] font-mono opacity-50">v0.8.0 (CVA Standard)</div>
             </div>
         </div>
     </aside>

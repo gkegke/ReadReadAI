@@ -25,7 +25,6 @@ export const ChunkSchema = z.object({
   activeAssetId: z.number().nullable().optional(), 
   generatedFilePath: z.string().nullable().optional(),
   cleanTextHash: z.string(),
-  // NEW: Store calculated peaks for lightweight canvas rendering
   waveformPeaks: z.array(z.number()).optional(),
   voiceOverride: z.object({
     voiceId: z.string().optional(),
@@ -45,6 +44,37 @@ export const JobSchema = z.object({
     retryCount: z.number().default(0),
     createdAt: z.date(),
 });
+
+/**
+ * [STABILITY] Worker Input Schemas
+ * These define the contract between the Main Thread and Workers.
+ */
+export const IngestWorkerSchema = {
+    processFile: z.object({
+        file: z.instanceof(File),
+        projectId: z.number()
+    }),
+    processText: z.object({
+        text: z.string(),
+        projectId: z.number()
+    })
+};
+
+export const TTSWorkerSchema = {
+    initModel: z.object({
+        modelId: z.string(),
+        onProgress: z.function()
+    }),
+    generate: z.object({
+        text: z.string(),
+        config: z.object({
+            voice: z.string(),
+            speed: z.number(),
+            lang: z.string()
+        }),
+        filepath: z.string()
+    })
+};
 
 export const LogSeveritySchema = z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR']);
 

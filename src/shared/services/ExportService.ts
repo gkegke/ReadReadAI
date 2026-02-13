@@ -1,6 +1,7 @@
 import JSZip from 'jszip';
 import { db } from '../db';
 import { storage } from './storage';
+import { AudioEncoderService } from '../lib/audio-encoder';
 
 /**
  * Service responsible for packaging project assets into exportable formats.
@@ -29,21 +30,27 @@ class ExportService {
         let filesAdded = 0;
 
         for (const chunk of chunks) {
-            // Retrieve path from chunk or lookup via hash in cache
             const filePath = chunk.generatedFilePath;
             
             if (filePath && chunk.status === 'generated') {
                 try {
-                    const blob = await storage.readFile(filePath);
+                    // 1. Read the raw internal WAV
+                    const rawWav = await storage.readFile(filePath);
+                    
+                    // 2. Compress to Opus on-the-fly for export
+                    const compressedAudio = await AudioEncoderService.encodeToOpus(rawWav);
                     
                     const orderPrefix = (chunk.orderInProject + 1).toString().padStart(3, '0');
                     const textSnippet = this.sanitizeFilename(chunk.textContent.slice(0, 30));
-                    const fileName = `${orderPrefix} - ${textSnippet}.wav`;
+                    
+                    // Use webm extension if compressed, otherwise wav
+                    const ext = compressedAudio.type.includes('webm') ? 'webm' : 'wav';
+                    const fileName = `${orderPrefix} - ${textSnippet}.${ext}`;
 
-                    folder.file(fileName, blob);
+                    folder.file(fileName, compressedAudio);
                     filesAdded++;
                 } catch (e) {
-                    console.warn(`Skipping chunk ${chunk.id}: Audio file missing in storage`, e);
+                    console.warn(`Skipping chunk ${chunk.id}: Audio file missing or corrupted`, e);
                 }
             }
         }
