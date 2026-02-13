@@ -1,7 +1,12 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertOctagon, RefreshCw } from 'lucide-react';
+import { AlertCircle, RotateCcw } from 'lucide-react';
+import { logger } from '../services/Logger';
 
-interface Props { children: ReactNode; name?: string; }
+interface Props { 
+    children: ReactNode; 
+    name: string; 
+    fallback?: ReactNode;
+}
 interface State { hasError: boolean; error: Error | null; }
 
 export class AppErrorBoundary extends Component<Props, State> {
@@ -12,23 +17,33 @@ export class AppErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error(`[Boundary: ${this.props.name || 'Global'}]`, error, errorInfo);
+    logger.error('ErrorBoundary', `Crash in [${this.props.name}]`, {
+        message: error.message,
+        stack: error.stack,
+        componentStack: errorInfo.componentStack
+    });
   }
+
+  private handleReset = () => {
+      this.setState({ hasError: false, error: null });
+  };
 
   public render() {
     if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback;
+
       return (
-        <div className="flex flex-col items-center justify-center p-12 text-center h-full bg-destructive/5 border border-destructive/10 rounded-xl m-4">
-          <AlertOctagon className="w-12 h-12 text-destructive mb-4" />
-          <h2 className="text-xl font-bold mb-2">Something went wrong</h2>
-          <p className="text-muted-foreground text-sm max-w-md mb-6 font-mono text-left bg-background p-4 rounded border">
-            {this.state.error?.message || "An unexpected error occurred in the Studio engine."}
+        <div className="flex flex-col items-center justify-center p-6 text-center h-full bg-destructive/5 border border-destructive/10 rounded-lg m-2">
+          <AlertCircle className="w-8 h-8 text-destructive mb-3" />
+          <h3 className="text-sm font-bold uppercase tracking-tight">Feature Error: {this.props.name}</h3>
+          <p className="text-[11px] text-muted-foreground mt-1 mb-4 max-w-xs font-mono">
+            {this.state.error?.message.slice(0, 100)}...
           </p>
           <button 
-            onClick={() => window.location.reload()}
-            className="flex items-center gap-2 bg-primary text-primary-foreground px-6 py-2 rounded-lg font-bold hover:opacity-90 transition-all"
+            onClick={this.handleReset}
+            className="flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-1.5 rounded text-xs font-bold hover:bg-secondary/80 transition-all border border-border"
           >
-            <RefreshCw className="w-4 h-4" /> REBOOT STUDIO
+            <RotateCcw className="w-3.5 h-3.5" /> RECOVERY
           </button>
         </div>
       );

@@ -1,11 +1,22 @@
-import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { logger } from '../../../shared/services/Logger';
-// CRITICAL: Force Vite to compile the TS processor to a JS URL
-import workletUrl from '../workers/audio-processor.ts?worker&url';
+// CRITICAL: Use ?url. ?worker&url implies a Worker constructor, but addModule expects a path.
+import workletUrl from '../workers/audio-processor.ts?url';
+
+export enum PlaybackState {
+    IDLE = 'IDLE',
+    BUFFERING = 'BUFFERING',
+    PLAYING = 'PLAYING',
+    PAUSED = 'PAUSED',
+    ERROR = 'ERROR'
+}
+
+type ProgressCallback = (currentTime: number, duration: number) => void;
+type EndedCallback = () => void;
 
 /**
- * AudioPlaybackService (V2)
- * Uses AudioWorklet for un-throttleable background playback.
+ * AudioPlaybackService (V4 - Hardened)
+ * Handles the high-precision AudioContext and Worklet lifecycle.
+ * Decoupled from Zustand to prevent circular dependencies.
  */
 class AudioPlaybackService {
     private ctx: AudioContext | null = null;
@@ -13,99 +24,135 @@ class AudioPlaybackService {
     private bufferCache = new Map<number, AudioBuffer>();
     private isInitialized = false;
 
+    // Reactive bindings
+    private onProgress: ProgressCallback | null = null;
+    private onEnded: EndedCallback | null = null;
+
+    // Internal state tracking to prevent race conditions
+    private _currentState: PlaybackState = PlaybackState.IDLE;
+    private _activeChunkId: number | null = null;
+
+    /**
+     * Bind store actions to this service. 
+     * call this once from the store or root component.
+     */
+    public bind(onProgress: ProgressCallback, onEnded: EndedCallback) {
+        this.onProgress = onProgress;
+        this.onEnded = onEnded;
+    }
+
     private async initContext() {
         if (this.isInitialized && this.ctx?.state !== 'closed') return;
         
-        this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)({
+        logger.info('Audio', 'Initializing Web Audio Context...');
+        this.ctx = new AudioContext({
             latencyHint: 'playback',
-            sampleRate: 24000 // Match our model's native rate
+            sampleRate: 24000 
         });
 
         try {
-            // CRITICAL: Use the compiled URL from the import above
             await this.ctx.audioWorklet.addModule(workletUrl);
-
             this.workletNode = new AudioWorkletNode(this.ctx, 'audio-stream-processor');
             this.workletNode.connect(this.ctx.destination);
 
             this.workletNode.port.onmessage = (e) => {
                 if (e.data.type === 'PROGRESS') {
-                    // Future: Update global UI state based on exact worklet frame progress
+                    const { processedFrames, totalFrames } = e.data;
+                    const sampleRate = this.ctx?.sampleRate || 24000;
+                    if (this.onProgress) {
+                        this.onProgress(processedFrames / sampleRate, totalFrames / sampleRate);
+                    }
+                }
+                if (e.data.type === 'ENDED') {
+                    logger.debug('Audio', 'Stream Ended, triggering auto-advance');
+                    if (this.onEnded) this.onEnded();
                 }
             };
 
             this.isInitialized = true;
-            logger.info('Audio', 'AudioWorklet Engine Initialized');
+            logger.info('Audio', 'Worklet Engine Ready');
         } catch (err) {
             logger.error('Audio', 'Worklet initialization failed', err);
-            // Fallback could be implemented here (ScriptProcessorNode), 
-            // but for this MVP we want to enforce Worklet usage.
+            this._currentState = PlaybackState.ERROR;
+            throw err;
         }
     }
 
+    /**
+     * Immediate Playback of a specific chunk.
+     * Clears existing buffers for a clean jump.
+     */
     public async playChunk(chunkId: number, blob: Blob, offset: number = 0) {
+        
+        // State Gatekeeping
+        if (this._activeChunkId === chunkId && this._currentState === PlaybackState.PLAYING && offset === 0) {
+            return this.toggle(); 
+        }
+
+        this._currentState = PlaybackState.BUFFERING;
         await this.initContext();
+        
         if (!this.ctx || !this.workletNode) return;
 
-        if (this.ctx.state === 'suspended') {
-            await this.ctx.resume();
-        }
-        
-        // Clear existing worklet buffer for immediate play
-        this.workletNode.port.postMessage({ type: 'CLEAR' });
-
         try {
+            if (this.ctx.state === 'suspended') await this.ctx.resume();
+            
+            // 1. Clear current playback queue
+            this.workletNode.port.postMessage({ type: 'CLEAR' });
+
+            // 2. Decode and push
             const buffer = await this.decode(blob, chunkId);
             const pcmData = buffer.getChannelData(0);
             
-            // Handle offset
             const startFrame = Math.floor(offset * buffer.sampleRate);
             const dataToPlay = startFrame > 0 ? pcmData.slice(startFrame) : pcmData;
 
             this.workletNode.port.postMessage({ 
                 type: 'PUSH_DATA', 
-                audio: dataToPlay 
+                audio: dataToPlay,
+                immediate: true 
             });
             
             this.workletNode.port.postMessage({ type: 'SET_PAUSED', paused: false });
             
-            useAudioStore.getState().setIsPlaying(true);
-            useAudioStore.getState().setActiveChunkId(chunkId);
+            this._activeChunkId = chunkId;
+            this._currentState = PlaybackState.PLAYING;
             
-            logger.debug('Audio', `Worklet play: chunk ${chunkId}`);
+            logger.info('Audio', `Started playback: Chunk ${chunkId} @ ${offset}s`);
         } catch (e) {
-            logger.error('Audio', 'Playback failed', e);
+            this._currentState = PlaybackState.ERROR;
+            logger.error('Audio', `Playback failed for chunk ${chunkId}`, e);
+            throw e; // Let the caller handle UI updates
         }
     }
 
+    /**
+     * Gapless Scheduling
+     * Pushes data to the end of the current worklet buffer.
+     */
     public async queueNextChunk(chunkId: number, blob: Blob) {
-        // Ensure context is alive before queuing
-        if (!this.workletNode) await this.initContext();
         if (!this.workletNode) return;
 
         try {
             const buffer = await this.decode(blob, chunkId);
-            const pcmData = buffer.getChannelData(0);
-
-            // Simply push data to the end of the worklet's internal buffer
             this.workletNode.port.postMessage({ 
                 type: 'PUSH_DATA', 
-                audio: pcmData 
+                audio: buffer.getChannelData(0),
+                immediate: false 
             });
-            
-            logger.info('Audio', `Worklet queued: chunk ${chunkId}`);
+            logger.debug('Audio', `Pre-buffered gapless: Chunk ${chunkId}`);
         } catch (e) {
-            logger.error('Audio', 'Queue failed', e);
+            logger.error('Audio', `Gapless queue failed for chunk ${chunkId}`, e);
         }
     }
 
     private async decode(blob: Blob, chunkId: number): Promise<AudioBuffer> {
+        // LRU Cache for decoded buffers to prevent GC thrashing during loops
         if (this.bufferCache.has(chunkId)) return this.bufferCache.get(chunkId)!;
         if (!this.ctx) throw new Error("Context not ready");
 
         const buffer = await this.ctx.decodeAudioData(await blob.arrayBuffer());
         
-        // Cache management: keep last 10 decodes to manage memory
         if (this.bufferCache.size > 10) {
             const firstKey = this.bufferCache.keys().next().value;
             if (firstKey !== undefined) this.bufferCache.delete(firstKey);
@@ -116,18 +163,23 @@ class AudioPlaybackService {
     }
 
     public async toggle() {
-        if (!this.ctx || !this.workletNode) return;
+        if (!this.ctx || !this.workletNode) return PlaybackState.IDLE;
         
-        // We toggle the state in the Worklet to stop/start processing frames,
-        // but we also suspend the Context to save battery/CPU.
-        if (this.ctx.state === 'running') {
+        if (this._currentState === PlaybackState.PLAYING) {
             await this.ctx.suspend();
             this.workletNode.port.postMessage({ type: 'SET_PAUSED', paused: true });
+            this._currentState = PlaybackState.PAUSED;
+            logger.debug('Audio', 'Playback Paused');
         } else {
             await this.ctx.resume();
             this.workletNode.port.postMessage({ type: 'SET_PAUSED', paused: false });
+            this._currentState = PlaybackState.PLAYING;
+            logger.debug('Audio', 'Playback Resumed');
         }
+        return this._currentState;
     }
+    
+    public get state() { return this._currentState; }
 }
 
 export const audioPlaybackService = new AudioPlaybackService();

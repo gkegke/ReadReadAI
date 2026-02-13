@@ -26,10 +26,7 @@ const App: React.FC = () => {
         try {
             await storage.init();
             await g2p.init(); 
-            
-            if (modelStatus === ModelStatus.UNLOADED) {
-                await tts.loadModel(activeModelId);
-            }
+            if (modelStatus === ModelStatus.UNLOADED) await tts.loadModel(activeModelId);
             await DemoService.checkAndCreateDemoProject();
         } catch (err) {
             logger.error('App', 'Critical Boot Failure', err);
@@ -40,28 +37,38 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
-      <Sidebar />
+      {/* Isolated Sidebar */}
+      <AppErrorBoundary name="Sidebar">
+        <Sidebar />
+      </AppErrorBoundary>
+
       <main className="flex-1 flex flex-col h-full min-w-0 overflow-hidden relative">
-        <AppErrorBoundary name="MainLayout">
+        <AppErrorBoundary name="Header">
           <StudioHeader />
+        </AppErrorBoundary>
         
-          {storageMode === 'memory' && (
-              <div className="bg-amber-500/10 text-amber-600 text-[10px] font-bold uppercase p-1 text-center">
-                  <AlertTriangle className="inline w-3 h-3 mr-1" /> Ephemeral Mode (Private Window Detected)
-              </div>
-          )}
+        {storageMode === 'memory' && (
+            <div className="bg-amber-500/10 text-amber-600 text-[10px] font-bold uppercase p-1 text-center border-y border-amber-500/20">
+                <AlertTriangle className="inline w-3 h-3 mr-1" /> Ephemeral Mode (Private Window Detected)
+            </div>
+        )}
 
-          {errorMessage && (
-              <div className="bg-destructive text-destructive-foreground text-xs p-1 text-center font-bold">
-                  {errorMessage}
-              </div>
-          )}
+        {errorMessage && (
+            <div className="bg-destructive text-destructive-foreground text-xs p-1 text-center font-bold">
+                {errorMessage}
+            </div>
+        )}
 
-          <div className="flex-1 min-h-0 relative">
-              <Outlet />
-          </div>
+        <div className="flex-1 min-h-0 relative">
+            {/* View Port (e.g., Timeline or Dashboard) */}
+            <AppErrorBoundary name="ViewLayer">
+                <Outlet />
+            </AppErrorBoundary>
+        </div>
 
-          <PlayerControls />
+        {/* Global Controls */}
+        <AppErrorBoundary name="PlayerBar">
+            <PlayerControls />
         </AppErrorBoundary>
       </main>
     </div>

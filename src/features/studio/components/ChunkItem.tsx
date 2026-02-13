@@ -2,9 +2,10 @@ import React, { useState, useEffect, memo } from 'react';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { PlayCircle, PauseCircle, Loader2 } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
-import { useServices } from '../../../shared/context/ServiceContext'; // UPDATED: Use Context
+import { useServices } from '../../../shared/context/ServiceContext';
 import { WaveformPlayer } from './WaveformPlayer';
 import { WaveformCanvas } from './WaveformCanvas';
+import { PlaybackState } from '../services/AudioPlaybackService';
 import type { Chunk } from '../../../shared/types/schema';
 
 interface ChunkItemProps {
@@ -13,23 +14,26 @@ interface ChunkItemProps {
 }
 
 export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
-  const { isPlaying } = useAudioStore();
-  const { playback, storage } = useServices(); // UPDATED: Consumed via DI
+  const { playbackState } = useAudioStore();
+  const { playback, storage } = useServices();
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
 
-  // Load blob only if we are the active chunk (to save memory) 
-  // or if we need it for interactive interaction.
+  const isPlaying = isActive && playbackState === PlaybackState.PLAYING;
+
   useEffect(() => {
+      let isMounted = true;
       if (isActive && chunk.status === 'generated' && chunk.generatedFilePath) {
-          storage.readFile(chunk.generatedFilePath).then(setAudioBlob);
+          storage.readFile(chunk.generatedFilePath).then(blob => {
+              if (isMounted) setAudioBlob(blob);
+          });
       }
+      return () => { isMounted = false; };
   }, [isActive, chunk.generatedFilePath, chunk.status, storage]);
 
   const handlePlay = async () => {
       if (isActive) {
           playback.toggle();
       } else {
-          // If playing a non-active chunk, load it on demand
           const blob = audioBlob || await storage.readFile(chunk.generatedFilePath!);
           playback.playChunk(chunk.id!, blob);
       }
@@ -53,12 +57,12 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
                     <span className="text-[10px] font-bold uppercase tracking-widest">Synthesizing...</span>
                 </div>
             ) : isActive && audioBlob ? (
-                /* Active: Interactive WaveSurfer */
                 <WaveformPlayer blob={audioBlob} isActive={isActive} chunkId={chunk.id!} />
             ) : chunk.waveformPeaks ? (
-                /* Inactive: Lightweight Static Canvas */
                 <WaveformCanvas peaks={chunk.waveformPeaks} />
-            ) : null}
+            ) : (
+                <div className="w-full h-[2px] bg-border/30 rounded-full" />
+            )}
         </div>
 
         <div className="flex items-center justify-between mt-4">
@@ -70,15 +74,10 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
                 disabled={chunk.status !== 'generated'}
                 className="text-primary hover:scale-110 transition-transform disabled:opacity-20"
             >
-                {isActive && isPlaying ? <PauseCircle /> : <PlayCircle />}
+                {isPlaying ? <PauseCircle /> : <PlayCircle />}
             </button>
         </div>
       </div>
     </div>
   );
-}, (prev, next) => {
-    return prev.isActive === next.isActive && 
-           prev.chunk.status === next.chunk.status &&
-           prev.chunk.textContent === next.chunk.textContent &&
-           prev.chunk.waveformPeaks === next.chunk.waveformPeaks;
 });

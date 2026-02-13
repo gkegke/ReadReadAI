@@ -1,37 +1,28 @@
-import G2PWorker from '../workers/g2p.worker?worker'; // FIXED PATH
+import G2PWorker from '../workers/g2p.worker?worker';
+import { WorkerFactory } from '../../../shared/lib/worker-factory';
+
+interface G2PWorkerApi {
+    phonemize(text: string, lang?: string): Promise<string>;
+}
 
 /**
- * G2PService
- * Singleton that manages the phonemization worker.
+ * G2PService (V4 - Standardized)
+ * Uses WorkerFactory for consistent lifecycle and error recovery.
  */
 class G2PService {
-    private worker: Worker | null = null;
-    private pendingRequests = new Map<string, (value: string) => void>();
+    private factory = new WorkerFactory<G2PWorkerApi>(G2PWorker, 'G2P-Phonemizer');
 
     async init(): Promise<void> {
-        if (this.worker) return;
-
-        this.worker = new G2PWorker();
-        this.worker.onmessage = (e) => {
-            const { id, phonemes, type } = e.data;
-            if (type === 'READY') return;
-            
-            const resolve = this.pendingRequests.get(id);
-            if (resolve) {
-                resolve(phonemes);
-                this.pendingRequests.delete(id);
-            }
-        };
+        await this.factory.getInstance();
     }
 
     async phonemize(text: string, lang: string = 'en-us'): Promise<string> {
-        if (!this.worker) await this.init();
-        
-        return new Promise((resolve) => {
-            const id = Math.random().toString(36).substring(7);
-            this.pendingRequests.set(id, resolve);
-            this.worker!.postMessage({ id, text, lang });
-        });
+        const worker = await this.factory.getInstance();
+        return await worker.phonemize(text, lang);
+    }
+
+    terminate() {
+        this.factory.terminate();
     }
 }
 

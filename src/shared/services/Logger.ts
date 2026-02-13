@@ -1,16 +1,20 @@
 import { db } from '../db';
-import type { LogSeverity } from '../types/schema';
+import type { LogSeverity, LogEntry } from '../types/schema';
 import { useSystemStore } from '../store/useSystemStore';
 
 /**
- * Enhanced Logger Service (Phase 3: Observability)
- * Now collects system telemetry and generates comprehensive debug bundles.
+ * LoggerService (V4 - Structured & Observability Focused)
+ * Captures system telemetry and provides a "Diagnostic Bundle" for Zero-Cloud support.
  */
 class LoggerService {
     private readonly MAX_LOGS = 5000;
 
-    async log(severity: LogSeverity, component: string, message: string, context?: any) {
-        const entry = {
+    /**
+     * Standardized Structured Logging
+     * @param context - Key-value pairs of metadata (no PII)
+     */
+    async log(severity: LogSeverity, component: string, message: string, context?: Record<string, any>) {
+        const entry: Omit<LogEntry, 'id'> = {
             timestamp: new Date(),
             severity,
             component,
@@ -18,19 +22,20 @@ class LoggerService {
             context: context ? JSON.parse(JSON.stringify(context)) : undefined
         };
 
-        if (severity === 'ERROR') {
-            console.error(`%c[${severity}] [${component}]`, 'color: #ff4d4d; font-weight: bold;', message, context || '');
-        } else if (severity === 'WARN') {
-            console.warn(`%c[${severity}] [${component}]`, 'color: #ffa500;', message, context || '');
-        } else {
-            console.log(`%c[${severity}] [${component}]`, 'color: #00ccff;', message, context || '');
-        }
+        // Dev Console Formatting
+        const colors = { DEBUG: '#7f8c8d', INFO: '#2ecc71', WARN: '#f1c40f', ERROR: '#e74c3c' };
+        console.log(
+            `%c[${severity}] [${component}] %c${message}`,
+            `color: ${colors[severity]}; font-weight: bold;`,
+            `color: inherit;`,
+            context || ''
+        );
 
         try {
-            await db.logs.add(entry);
-            if (Math.random() < 0.01) this.rotate();
+            await db.logs.add(entry as LogEntry);
+            if (Math.random() < 0.05) this.rotate();
         } catch (e) {
-            console.error("Logger write failure", e);
+            console.warn("[Logger] Persistence failed (DB locked?)", e);
         }
     }
 
@@ -48,30 +53,39 @@ class LoggerService {
     }
 
     /**
-     * CRITICAL: Generates a "Technical Support Bundle"
-     * Includes logs, system metadata, and database stats.
+     * Diagnostic Telemetry (Coarsened for Privacy)
+     * Captures hardware cohorts and storage health.
      */
-    async exportDebugBundle() {
-        this.info('System', 'Generating Debug Bundle...');
-        
-        const logs = await db.logs.orderBy('timestamp').toArray();
-        const projectCount = await db.projects.count();
-        const chunkCount = await db.chunks.count();
-        const jobCount = await db.jobs.count();
-        
-        const telemetry = {
-            appVersion: '0.8.0',
-            userAgent: navigator.userAgent,
-            timestamp: new Date().toISOString(),
-            storageMode: useSystemStore.getState().storageMode,
-            stats: { projects: projectCount, chunks: chunkCount, jobs: jobCount },
-            memory: (performance as any).memory ? {
-                usedJSHeapSize: (performance as any).memory.usedJSHeapSize / 1024 / 1024 + 'MB',
-                totalJSHeapSize: (performance as any).memory.totalJSHeapSize / 1024 / 1024 + 'MB',
-            } : 'N/A'
-        };
+    async getDiagnosticBundle() {
+        const [projects, chunks, jobs] = await Promise.all([
+            db.projects.count(),
+            db.chunks.count(),
+            db.jobs.count()
+        ]);
 
-        const bundle = { telemetry, logs };
+        return {
+            version: '0.8.0',
+            timestamp: new Date().toISOString(),
+            system: {
+                userAgent: navigator.userAgent,
+                // Research Tag: navigator.deviceMemory is Chromium-only (0.25 to 8GB)
+                ram_gb_approx: (navigator as any).deviceMemory || 'unknown',
+                logical_cores: navigator.hardwareConcurrency || 'unknown',
+                storage_mode: useSystemStore.getState().storageMode
+            },
+            database: {
+                stats: { projects, chunks, jobs },
+                is_persistent: await navigator.storage?.persisted() || false
+            }
+        };
+    }
+
+    async exportLogs() {
+        const bundle = {
+            telemetry: await this.getDiagnosticBundle(),
+            logs: await db.logs.orderBy('timestamp').reverse().limit(1000).toArray()
+        };
+        
         const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

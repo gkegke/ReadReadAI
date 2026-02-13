@@ -2,8 +2,8 @@ import * as Comlink from 'comlink';
 import { logger } from '../services/Logger';
 
 /**
- * Robust Worker Factory
- * Wraps Comlink with auto-restart logic and error boundaries.
+ * Robust Worker Factory (V4)
+ * Wraps Comlink with hardware-aware auto-restart and structured error logging.
  */
 export class WorkerFactory<T> {
     private worker: Worker | null = null;
@@ -29,9 +29,13 @@ export class WorkerFactory<T> {
         try {
             this.worker = new this.workerConstructor();
             
-            // Native Error Listener
+            // Native Event Listener for Uncaught Worker Errors
             this.worker.onerror = (err) => {
-                logger.error('WorkerFactory', `${this.name} Crashed`, err);
+                logger.error('WorkerFactory', `${this.name} Thread Crashed`, {
+                    message: err.message,
+                    filename: err.filename,
+                    lineno: err.lineno
+                });
                 this.handleCrash();
             };
 
@@ -46,21 +50,23 @@ export class WorkerFactory<T> {
     private handleCrash() {
         if (this.isTerminated) return;
         
-        // Dispose old
         this.proxy = null;
         if (this.worker) this.worker.terminate();
         this.worker = null;
 
-        // Debounced Restart
+        // Exponential Backoff could be added here; 1s is safe for most OOMs
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
-            logger.warn('WorkerFactory', `Restarting ${this.name}...`);
-            this.init();
-        }, 1000);
+            if (!this.isTerminated) {
+                logger.warn('WorkerFactory', `Auto-Restarting ${this.name} context...`);
+                this.init();
+            }
+        }, 1500);
     }
 
     public terminate() {
         this.isTerminated = true;
+        clearTimeout(this.restartTimer);
         if (this.worker) this.worker.terminate();
     }
 }
