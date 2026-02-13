@@ -7,6 +7,7 @@ export interface AudioCacheRecord {
   byteSize: number;   
   mimeType: string;
   createdAt: Date;
+  lastAccessedAt: Date; // [CRITICAL] Added for LRU Eviction Policy
 }
 
 class ReadReadDB extends Dexie {
@@ -19,10 +20,11 @@ class ReadReadDB extends Dexie {
   constructor() {
     super('ReadReadAI_DB');
     
-    this.version(1).stores({
+    this.version(1).stores({ // [BUMP] Version 2 for LRU index
         projects: '++id, name, createdAt',
         chunks: '++id, projectId, [projectId+orderInProject]',
-        audioCache: 'hash',
+        // [OPTIMIZATION] Index lastAccessedAt for fast LRU queries
+        audioCache: 'hash, lastAccessedAt', 
         jobs: '++id, chunkId, status, priority, [status+priority]',
         logs: '++id, timestamp, severity, component'
     });

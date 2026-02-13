@@ -2,13 +2,15 @@ import { db } from '../../../shared/db';
 import { ttsService } from './TTSService';
 import { storage } from '../../../shared/services/storage';
 import { logger } from '../../../shared/services/Logger';
+import { StorageQuotaService } from '../../../shared/services/storage/StorageQuotaService';
 
 export const AudioGenerationService = {
     async generate(chunkId: number): Promise<void> {
         const chunk = await db.chunks.get(chunkId);
-        
-        // CRITICAL: Gatekeeping to prevent race conditions or duplicate synthesis
         if (!chunk || chunk.status === 'processing' || chunk.status === 'generated') return;
+
+        // [STABILITY] Check for space before attempting synthesis
+        await StorageQuotaService.checkAndPurge();
 
         const project = await db.projects.get(chunk.projectId);
         if (!project) return;
@@ -21,10 +23,12 @@ export const AudioGenerationService = {
             const config = { voice: voiceId, speed: speed, lang: 'en-us' };
             const filePath = `audio/${chunk.cleanTextHash}.wav`;
 
-            // Check persistent cache first
+            // Persistent Cache Check
             const cached = await db.audioCache.get(chunk.cleanTextHash);
             if (cached && await storage.exists(cached.path)) {
-                logger.debug('AudioGen', `Cache hit for chunk ${chunkId}`);
+                // [LRU] Update access time on cache hit
+                await StorageQuotaService.touch(chunk.cleanTextHash);
+                
                 await db.chunks.update(chunkId, { 
                     status: 'generated',
                     generatedFilePath: cached.path 
@@ -39,7 +43,8 @@ export const AudioGenerationService = {
                 path: filePath,
                 byteSize: result.byteSize,
                 mimeType: 'audio/wav',
-                createdAt: new Date()
+                createdAt: new Date(),
+                lastAccessedAt: new Date() // [LRU] Initialize timestamp
             });
 
             await db.chunks.update(chunkId, { 

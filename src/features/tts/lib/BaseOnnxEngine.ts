@@ -2,6 +2,7 @@ import * as ort from 'onnxruntime-web';
 import { TTSEngine } from './types';
 import { cachedFetch, cleanTextForTTS } from './utils';
 import { g2pService } from '../services/G2PService'; 
+import { logger } from '../../../shared/services/Logger';
 
 ort.env.wasm.wasmPaths = {
     'ort-wasm-simd-threaded.wasm': '/onnx-runtime/ort-wasm-simd-threaded.wasm',
@@ -19,16 +20,17 @@ export abstract class BaseOnnxEngine extends TTSEngine {
 
     protected async initSession(modelPath: string): Promise<void> {
         try {
+            logger.debug('BaseOnnxEngine', `Fetching model: ${modelPath}`);
             const modelResponse = await cachedFetch(modelPath);
             const modelBuffer = await modelResponse.arrayBuffer();
             
             this.session = await ort.InferenceSession.create(modelBuffer, {
                 executionProviders: ['wasm'],
-                // Add optimization hint to reduce SIMD warnings
                 graphOptimizationLevel: 'all',
             });
+            logger.info('BaseOnnxEngine', `Session initialized for ${modelPath}`);
         } catch (e) {
-            console.error(`[BaseOnnxEngine] Failed to load model: ${modelPath}`, e);
+            logger.error('BaseOnnxEngine', `Failed to load model: ${modelPath}`, e);
             throw new Error(`Failed to load ONNX model from ${modelPath}`);
         }
     }

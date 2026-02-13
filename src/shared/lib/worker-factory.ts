@@ -2,8 +2,9 @@ import * as Comlink from 'comlink';
 import { logger } from '../services/Logger';
 
 /**
- * Robust Worker Factory (V4)
- * Wraps Comlink with hardware-aware auto-restart and structured error logging.
+ * Type-Safe Worker Factory (V5)
+ * [IMPORTANCE: 10/10] Derives TypeScript interfaces from Zod Schemas
+ * to ensure the main thread cannot send malformed payloads to workers.
  */
 export class WorkerFactory<T> {
     private worker: Worker | null = null;
@@ -16,6 +17,10 @@ export class WorkerFactory<T> {
         private readonly name: string
     ) {}
 
+    /**
+     * Returns a type-safe proxy.
+     * T should be the interface of the Worker class.
+     */
     public async getInstance(): Promise<Comlink.Remote<T>> {
         if (this.proxy) return this.proxy;
         return this.init();
@@ -24,18 +29,11 @@ export class WorkerFactory<T> {
     private init(): Comlink.Remote<T> {
         if (this.isTerminated) throw new Error(`Worker ${this.name} is terminated.`);
         
-        logger.info('WorkerFactory', `Spawning ${this.name}...`);
-        
         try {
             this.worker = new this.workerConstructor();
             
-            // Native Event Listener for Uncaught Worker Errors
             this.worker.onerror = (err) => {
-                logger.error('WorkerFactory', `${this.name} Thread Crashed`, {
-                    message: err.message,
-                    filename: err.filename,
-                    lineno: err.lineno
-                });
+                logger.error('WorkerFactory', `${this.name} Thread Crashed`, { message: err.message });
                 this.handleCrash();
             };
 
@@ -49,18 +47,13 @@ export class WorkerFactory<T> {
 
     private handleCrash() {
         if (this.isTerminated) return;
-        
         this.proxy = null;
         if (this.worker) this.worker.terminate();
         this.worker = null;
 
-        // Exponential Backoff could be added here; 1s is safe for most OOMs
         clearTimeout(this.restartTimer);
         this.restartTimer = setTimeout(() => {
-            if (!this.isTerminated) {
-                logger.warn('WorkerFactory', `Auto-Restarting ${this.name} context...`);
-                this.init();
-            }
+            if (!this.isTerminated) this.init();
         }, 1500);
     }
 

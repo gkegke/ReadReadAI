@@ -1,29 +1,31 @@
 import * as Comlink from 'comlink';
-import * as pdfjsLib from 'pdfjs-dist';
 import { Readability } from '@mozilla/readability';
 import { parseHTML } from 'linkedom/worker';
+import { getDocumentProxy, extractText } from 'unpdf';
 import { chunkText } from '../lib/text-processor';
 import { IngestWorkerSchema } from '../types/schema';
+import { logger } from '../services/Logger';
 
-// Configure PDFJS Worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf-worker/pdf.worker.min.mjs';
-
+/**
+ * IngestWorker (V3 - Standardized via unpdf)
+ * Offloads heavy document parsing to a background thread.
+ */
 class IngestWorker {
-    /**
-     * [CRITICAL] Zod Barrier Implementation
-     * Validates file buffers and project metadata before parsing.
-     */
     async processFile(file: File, projectId: number) {
-        // Runtime validation
         IngestWorkerSchema.processFile.parse({ file, projectId });
 
         let content = '';
-        if (file.type === 'application/pdf') {
-            content = await this.parsePdf(file);
-        } else if (file.type === 'text/html') {
-            content = await this.parseHtml(await file.text());
-        } else {
-            content = await file.text();
+        try {
+            if (file.type === 'application/pdf') {
+                content = await this.parsePdf(file);
+            } else if (file.type === 'text/html') {
+                content = await this.parseHtml(await file.text());
+            } else {
+                content = await file.text();
+            }
+        } catch (err) {
+            logger.error('IngestWorker', `Parsing failed for ${file.name}`, err);
+            throw new Error(`Failed to parse ${file.type} document.`);
         }
 
         return await this.createChunks(content, projectId, file.name);
@@ -57,33 +59,28 @@ class IngestWorker {
         return article ? article.textContent : document.body.textContent || '';
     }
 
+    /**
+     * PDF Parsing via unpdf
+     * [CRITICAL] Standardizes text extraction and provides better handling 
+     * of multi-page documents than the raw PDF.js loop.
+     */
     private async parsePdf(file: File): Promise<string> {
         const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-        let fullTextParts: string[] = [];
         
-        for (let i = 1; i <= pdf.numPages; i++) {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const viewport = page.getViewport({ scale: 1 });
-            const height = viewport.height;
+        // Load the PDF using unpdf's standardized proxy
+        const pdf = await getDocumentProxy(new Uint8Array(arrayBuffer));
+        
+        // Extract text using unpdf's built-in extraction utility
+        const result = await extractText(pdf, {
+            mergePages: true
+        });
 
-            const topLimit = height * 0.95; 
-            const bottomLimit = height * 0.05;
-
-            const safeItems = textContent.items.filter((item: any) => {
-                const y = item.transform[5];
-                const str = item.str.trim();
-                if (str.length === 0) return false;
-                if (/^\d+$/.test(str) && (y > topLimit || y < bottomLimit)) return false;
-                return true;
-            });
-            
-            const pageText = safeItems.map((item: any) => item.str).join(' ');
-            fullTextParts.push(pageText);
+        // Join page contents with double newlines to help the semantic chunker
+        if (Array.isArray(result.pages)) {
+            return result.pages.map(p => p.textContent).join('\n\n');
         }
-
-        return fullTextParts.join('\n\n');
+        
+        return result.text || '';
     }
 }
 

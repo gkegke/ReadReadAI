@@ -1,6 +1,54 @@
 /**
- * Shared utilities for text processing across engines
+ * Shared utilities for text processing and networking across engines.
  */
+import ky from 'ky';
+import { logger } from '../../../shared/services/Logger';
+
+/**
+ * Standardized Fetcher for AI Models and Assets.
+ * [IMPORTANCE: 9/10] Implements retries and timeouts for large binary assets
+ * which are prone to failure on mobile/unstable connections.
+ */
+export const assetClient = ky.create({
+    timeout: 60000, // 60s for large model chunks
+    retry: {
+        limit: 3,
+        methods: ['get'],
+        statusCodes: [408, 413, 429, 500, 502, 503, 504],
+        backoffLimit: 3000
+    },
+    hooks: {
+        beforeRetry: [
+            async ({ request, retryCount }) => {
+                logger.warn('Network', `Retrying asset download (${retryCount}/3): ${request.url}`);
+            }
+        ]
+    }
+});
+
+/**
+ * Caches and retrieves binary assets using the browser Cache API.
+ * Leverages 'ky' for the underlying request logic.
+ */
+export async function cachedFetch(url: string): Promise<Response> {
+    const cacheName = 'readread-model-cache-v1';
+    const cache = await caches.open(cacheName);
+    
+    const cachedResponse = await cache.match(url);
+    if (cachedResponse) {
+        return cachedResponse;
+    }
+
+    // Use ky for the request to get robust retry/timeout logic
+    const response = await assetClient.get(url);
+    
+    // We must clone the response before putting it in cache and returning it
+    if (response.ok) {
+        cache.put(url, response.clone());
+    }
+    return response;
+}
+
 export function cleanTextForTTS(text: string): string {
     if (!text) return '';
 
@@ -16,21 +64,4 @@ export function cleanTextForTTS(text: string): string {
         .replace(/\b-\b/g, ' ')
         .replace(/[^\u0000-\u024F]/g, '') // Remove non-Latin
         .trim();
-}
-
-// Simple caching fetch wrapper
-export async function cachedFetch(url: string): Promise<Response> {
-    const cacheName = 'readread-model-cache-v1';
-    const cache = await caches.open(cacheName);
-    
-    const cachedResponse = await cache.match(url);
-    if (cachedResponse) {
-        return cachedResponse;
-    }
-
-    const response = await fetch(url);
-    if (response.ok) {
-        cache.put(url, response.clone());
-    }
-    return response;
 }

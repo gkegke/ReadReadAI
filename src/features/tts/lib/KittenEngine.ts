@@ -1,7 +1,8 @@
 import { BaseOnnxEngine } from './BaseOnnxEngine';
 import { type AudioResult } from './types';
 import type { ModelConfig } from '../../../shared/types/tts';
-import { cachedFetch } from './utils';
+import { assetClient } from './utils';
+import { logger } from '../../../shared/services/Logger';
 
 export class KittenEngine extends BaseOnnxEngine {
     private vocab: Record<string, number> = {};
@@ -11,16 +12,17 @@ export class KittenEngine extends BaseOnnxEngine {
         await this.initSession('/tts-models/kitten-tts/model_quantized.onnx');
 
         try {
-            const [tokenizerRes, voicesRes] = await Promise.all([
-                cachedFetch('/tts-models/kitten-tts/tokenizer.json'),
-                cachedFetch('/tts-models/kitten-tts/voices.json')
+            // [OPTIMIZATION] Use Ky directly for metadata to handle retries/JSON parsing
+            const [tokenizerData, voicesData] = await Promise.all([
+                assetClient.get('/tts-models/kitten-tts/tokenizer.json').json<any>(),
+                assetClient.get('/tts-models/kitten-tts/voices.json').json<any>()
             ]);
 
-            const tokenizerData = await tokenizerRes.json();
-            this.voices = await voicesRes.json();
+            this.voices = voicesData;
             this.vocab = tokenizerData.model.vocab;
+            logger.info('KittenEngine', 'Metadata and Vocab loaded');
         } catch (e) {
-            console.error("[KittenEngine] Metadata Init Failed", e);
+            logger.error("KittenEngine", "Metadata Init Failed", e);
             throw e;
         }
     }
@@ -29,13 +31,10 @@ export class KittenEngine extends BaseOnnxEngine {
         this.checkSession();
         
         const phonemes = await this.getPhonemes(text, 'en-us');
-        
-        // Kitten Specific tokenization wrapped in boundaries
         const tokensWithBoundaries = `$${phonemes}$`;
         
         // Safety: Use character 0 (usually <unk> or <pad>) for unknown phonemes
         const inputIds = tokensWithBoundaries.split('').map(char => this.vocab[char] ?? 0);
-
         const tensorIds = this.createInt64Tensor(inputIds, [1, inputIds.length]);
         
         const voiceId = config.voice in this.voices ? config.voice : 'expr-voice-2-m';
