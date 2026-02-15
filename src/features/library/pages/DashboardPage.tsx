@@ -1,57 +1,59 @@
 import React from 'react';
 import { useProjects } from '../../../shared/hooks/useQueries';
-import { ProjectRepository } from '../api/ProjectRepository';
-import { Plus, FileText, Clock } from 'lucide-react';
+import { FileText, Clock, LayoutGrid } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
+import { CreateProjectDialog } from '../components/CreateProjectDialog';
 
 export const DashboardPage: React.FC = () => {
     const { data: projects, isLoading } = useProjects();
 
-    const handleCreate = async () => {
-        const name = prompt("Project Name:");
-        if (name) await ProjectRepository.createProject(name);
-    };
-
     return (
-        <div className="h-full overflow-y-auto p-8 bg-background">
+        <div className="h-full overflow-y-auto p-8 bg-background selection:bg-primary/10">
             <div className="max-w-5xl mx-auto">
-                <div className="flex items-center justify-between mb-8">
+                <header className="flex items-end justify-between mb-12">
                     <div>
-                        <h1 className="text-3xl font-black tracking-tight">DASHBOARD</h1>
-                        <p className="text-muted-foreground text-sm">Select a project to start generating audio.</p>
+                        <div className="flex items-center gap-2 mb-2">
+                            <LayoutGrid className="w-4 h-4 text-primary" />
+                            <span className="text-[10px] font-black tracking-[0.2em] text-muted-foreground uppercase">Library</span>
+                        </div>
+                        <h1 className="text-4xl font-black tracking-tight">STUDIO</h1>
                     </div>
-                    <button 
-                        onClick={handleCreate}
-                        className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg font-bold hover:opacity-90 transition-all shadow-lg shadow-primary/20"
-                    >
-                        <Plus className="w-5 h-5" /> NEW PROJECT
-                    </button>
-                </div>
+                    {/* EPIC 1: Replaced window.prompt with Dialog */}
+                    <CreateProjectDialog />
+                </header>
 
                 {isLoading ? (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {[1, 2, 3].map(i => <div key={i} className="h-32 bg-secondary/20 animate-pulse rounded-xl" />)}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="h-40 bg-secondary/20 animate-pulse rounded-2xl border border-border" />
+                        ))}
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {projects.map(project => (
                             <Link 
                                 key={project.id} 
                                 to="/project/$projectId" 
                                 params={{ projectId: String(project.id) }}
-                                className="group p-5 rounded-xl border border-border bg-card hover:border-primary/50 transition-all hover:shadow-md"
+                                className="group p-6 rounded-2xl border border-border bg-card hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
                             >
-                                <div className="flex items-start justify-between mb-4">
-                                    <div className="p-2 bg-secondary rounded-lg text-primary">
+                                <div className="flex items-start justify-between mb-6">
+                                    <div className="p-3 bg-secondary/50 rounded-xl text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
                                         <FileText className="w-6 h-6" />
                                     </div>
-                                    <span className="text-[10px] font-bold text-muted-foreground uppercase flex items-center gap-1">
-                                        <Clock className="w-3 h-3" />
-                                        {new Date(project.updatedAt).toLocaleDateString()}
-                                    </span>
+                                    <div className="text-right">
+                                        <div className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest mb-1">Last Sync</div>
+                                        <span className="text-[11px] font-mono opacity-60 flex items-center gap-1 justify-end">
+                                            <Clock className="w-3 h-3" />
+                                            {new Date(project.updatedAt).toLocaleDateString()}
+                                        </span>
+                                    </div>
                                 </div>
-                                <h3 className="font-bold text-lg truncate group-hover:text-primary transition-colors">{project.name}</h3>
-                                <p className="text-xs text-muted-foreground mt-1">Local Storage (OPFS)</p>
+                                <h3 className="font-bold text-xl truncate group-hover:text-primary transition-colors">{project.name}</h3>
+                                <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
+                                    <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Local Storage</span>
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
+                                </div>
                             </Link>
                         ))}
                     </div>
