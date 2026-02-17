@@ -1,5 +1,6 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
+import { useSystemStore } from '../../../shared/store/useSystemStore'; // [EPIC 3]
 import { PlayCircle, PauseCircle, Loader2, Edit3, Check } from 'lucide-react';
 import { useServices } from '../../../shared/context/ServiceContext';
 import { WaveformPlayer } from './WaveformPlayer';
@@ -7,11 +8,12 @@ import { WaveformCanvas } from './WaveformCanvas';
 import { PlaybackState } from '../services/AudioPlaybackService';
 import { useUpdateChunkTextMutation } from '../../../shared/hooks/useMutations';
 import { cva } from 'class-variance-authority';
+import { cn } from '../../../shared/lib/utils';
 import type { Chunk } from '../../../shared/types/schema';
 
 const chunkVariants = {
     container: cva(
-        "group relative pl-6 border-l-2 py-4 transition-all",
+        "group relative pl-6 border-l-2 py-4 transition-all duration-500 ease-in-out", // Added duration
         {
             variants: {
                 active: { true: "border-primary", false: "border-transparent hover:border-border" }
@@ -20,7 +22,7 @@ const chunkVariants = {
         }
     ),
     card: cva(
-        "rounded-xl p-5 border transition-all",
+        "rounded-xl p-5 border transition-all duration-300",
         {
             variants: {
                 active: { true: "bg-secondary/30 border-border shadow-sm", false: "border-transparent hover:bg-secondary/10" }
@@ -36,7 +38,8 @@ interface ChunkItemProps {
 }
 
 export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
-  const { playbackState } = useAudioStore();
+  const { playbackState, isPlaying: isGlobalPlaying } = useAudioStore();
+  const { isZenMode } = useSystemStore(); // [EPIC 3] Zen Mode Consumption
   const { playback, storage, logger } = useServices();
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   
@@ -47,6 +50,11 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
   const { mutate: updateText, isPending: isSaving } = useUpdateChunkTextMutation();
 
   const isPlaying = isActive && playbackState === PlaybackState.PLAYING;
+
+  // [EPIC 3] Zen Mode Logic
+  // If Zen mode is ON, and we are playing audio globally, and this item is NOT active...
+  // ...then we dim it, blur it slightly, and grayscale it to reduce cognitive load.
+  const isDimmed = isZenMode && isGlobalPlaying && !isActive;
 
   useEffect(() => {
       let isMounted = true;
@@ -84,7 +92,13 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
   };
 
   return (
-    <div className={chunkVariants.container({ active: isActive })}>
+    <div 
+        className={cn(
+            chunkVariants.container({ active: isActive }),
+            // [EPIC 3] Visual Application of Zen Mode
+            isDimmed && "opacity-20 blur-[1px] grayscale scale-[0.99] pointer-events-none"
+        )}
+    >
       <div className={chunkVariants.card({ active: isActive })}>
         
         {/* [Epic 4] Contextual Editor UI */}
@@ -107,7 +121,11 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
             ) : (
                 <p 
                     onDoubleClick={() => setIsEditing(true)}
-                    className="text-lg font-serif leading-relaxed mb-4 cursor-text selection:bg-primary/10"
+                    className={cn(
+                        "text-lg font-serif leading-relaxed mb-4 cursor-text selection:bg-primary/10 transition-all",
+                        // [EPIC 3] Active Font Scaling
+                        isActive && isZenMode ? "text-xl font-medium tracking-wide" : ""
+                    )}
                 >
                     {chunk.textContent}
                     <button 

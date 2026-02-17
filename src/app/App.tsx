@@ -3,7 +3,7 @@ import { Outlet } from '@tanstack/react-router'
 import { Sidebar } from '../features/library/components/Sidebar'
 import { StudioHeader } from '../features/studio/components/StudioHeader'
 import { PlayerControls } from '../features/studio/components/PlayerControls'
-import { TimelineSearch } from '../features/studio/components/TimelineSearch' // [EPIC 3]
+import { TimelineSearch } from '../features/studio/components/TimelineSearch'
 import { useTTSStore } from '../features/tts/store/useTTSStore'
 import { ModelStatus } from '../shared/types/tts'
 import { useSystemStore } from '../shared/store/useSystemStore'
@@ -11,6 +11,7 @@ import { DemoService } from '../shared/services/DemoService'
 import { AppErrorBoundary } from '../shared/components/AppErrorBoundary'
 import { useServices } from '../shared/context/ServiceContext'
 import { AlertTriangle } from 'lucide-react'
+import { BootScreen } from '../shared/components/ui/BootScreen' // EPIC 1
 
 /**
  * App (V2.1 - Root Orchestrator)
@@ -44,6 +45,9 @@ const App: React.FC = () => {
 
   return (
     <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
+      {/* [EPIC 1] High-Fidelity Boot Overlay */}
+      <BootScreen />
+
       {/* [EPIC 3] Global Command Palette (⌘K) */}
       <TimelineSearch />
 

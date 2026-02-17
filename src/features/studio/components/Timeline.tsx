@@ -10,13 +10,14 @@ import { AppErrorBoundary } from '../../../shared/components/AppErrorBoundary';
 
 export const Timeline: React.FC = () => {
   const { activeChunkId } = useAudioStore();
-  const { activeProjectId } = useProjectStore();
-  const { data: chunks, isLoading } = useProjectChunks(activeProjectId);
+  const { activeProjectId, activeChapterId } = useProjectStore();
+  
+  // [EPIC 2] Filtered data based on scoped selection
+  const { data: chunks, isLoading } = useProjectChunks(activeProjectId, activeChapterId);
   
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [inputValue, setInputValue] = useState('');
   
-  // High ROI: TanStack Mutation for clean async state
   const { mutate: importText, isPending: isImporting } = useImportTextMutation();
 
   useEffect(() => {

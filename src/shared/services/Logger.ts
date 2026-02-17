@@ -8,19 +8,21 @@ import { useSystemStore } from '../store/useSystemStore';
  */
 class LoggerService {
     private readonly MAX_LOGS = 5000;
+    private memoryLogs: LogEntry[] = []; // [EPIC 1] In-memory buffer for real-time UI updates
 
-    /**
-     * Standardized Structured Logging
-     * @param context - Key-value pairs of metadata (no PII)
-     */
     async log(severity: LogSeverity, component: string, message: string, context?: Record<string, any>) {
-        const entry: Omit<LogEntry, 'id'> = {
+        const entry: LogEntry = {
+            id: Math.random(),
             timestamp: new Date(),
             severity,
             component,
             message,
             context: context ? JSON.parse(JSON.stringify(context)) : undefined
         };
+
+        // Maintain small buffer for UI components like BootScreen
+        this.memoryLogs.unshift(entry);
+        if (this.memoryLogs.length > 50) this.memoryLogs.pop();
 
         // Dev Console Formatting
         const colors = { DEBUG: '#7f8c8d', INFO: '#2ecc71', WARN: '#f1c40f', ERROR: '#e74c3c' };
@@ -39,6 +41,13 @@ class LoggerService {
         }
     }
 
+    /**
+     * [EPIC 1] Returns the most recent logs for UI display.
+     */
+    getRecentLogs(count: number = 5): LogEntry[] {
+        return this.memoryLogs.slice(0, count);
+    }
+
     info(comp: string, msg: string, ctx?: any) { return this.log('INFO', comp, msg, ctx); }
     warn(comp: string, msg: string, ctx?: any) { return this.log('WARN', comp, msg, ctx); }
     error(comp: string, msg: string, ctx?: any) { return this.log('ERROR', comp, msg, ctx); }
@@ -52,10 +61,6 @@ class LoggerService {
         }
     }
 
-    /**
-     * Diagnostic Telemetry (Coarsened for Privacy)
-     * Captures hardware cohorts and storage health.
-     */
     async getDiagnosticBundle() {
         const [projects, chunks, jobs] = await Promise.all([
             db.projects.count(),
@@ -64,11 +69,10 @@ class LoggerService {
         ]);
 
         return {
-            version: '0.8.0',
+            version: '0.9.0',
             timestamp: new Date().toISOString(),
             system: {
                 userAgent: navigator.userAgent,
-                // Research Tag: navigator.deviceMemory is Chromium-only (0.25 to 8GB)
                 ram_gb_approx: (navigator as any).deviceMemory || 'unknown',
                 logical_cores: navigator.hardwareConcurrency || 'unknown',
                 storage_mode: useSystemStore.getState().storageMode

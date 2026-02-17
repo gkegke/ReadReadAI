@@ -1,11 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import type { Project, Chunk } from '../types/schema';
-
-/**
- * Standardized Data Access Layer
- * Wraps Dexie's useLiveQuery to provide consistent data + loading states.
- */
+import type { Project, Chunk, Chapter } from '../types/schema';
 
 // --- PROJECTS ---
 
@@ -31,23 +26,61 @@ export const useProject = (id: number | null) => {
     };
 };
 
-// --- CHUNKS ---
+// --- CHAPTERS ---
 
-/**
- * CRITICAL: Bulk Data Fetch (For Timeline)
- * Returns the full Chunk objects for a project in a single reactive query.
- * Used by Timeline.tsx to prevent the N+1 query problem.
- */
-export const useProjectChunks = (projectId: number | null) => {
+export const useProjectChapters = (projectId: number | null) => {
     const data = useLiveQuery(
         async () => {
-            if (projectId === null) return [];
-            return await db.chunks
+            if (!projectId) return [];
+            return await db.chapters
                 .where('projectId')
                 .equals(projectId)
                 .sortBy('orderInProject');
         },
         [projectId]
+    );
+    return {
+        data: data || [],
+        isLoading: projectId !== null && data === undefined
+    };
+};
+
+export const useChapter = (chapterId: number | null) => {
+    const data = useLiveQuery(
+        async () => (chapterId ? await db.chapters.get(chapterId) : undefined),
+        [chapterId]
+    );
+    return {
+        data,
+        isLoading: chapterId !== null && data === undefined
+    };
+};
+
+// --- CHUNKS ---
+
+/**
+ * [UPDATED] Hierarchical Chunk Fetching
+ * If chapterId is provided, returns chunks for that chapter. 
+ * Otherwise, returns all chunks for the project.
+ */
+export const useProjectChunks = (projectId: number | null, chapterId: number | null = null) => {
+    const data = useLiveQuery(
+        async () => {
+            if (projectId === null) return [];
+            
+            if (chapterId) {
+                return await db.chunks
+                    .where('chapterId')
+                    .equals(chapterId)
+                    .sortBy('orderInProject');
+            }
+
+            return await db.chunks
+                .where('projectId')
+                .equals(projectId)
+                .sortBy('orderInProject');
+        },
+        [projectId, chapterId]
     );
     
     return {
@@ -56,23 +89,22 @@ export const useProjectChunks = (projectId: number | null) => {
     };
 };
 
-/**
- * Optimized for Navigation (For PlayerControls/Sidebar)
- * Returns only an array of IDs. 
- * This is better for navigation UI as it doesn't trigger re-renders 
- * when a chunk's text or synthesis status updates.
- */
-export const useProjectChunkIds = (projectId: number | null) => {
+export const useProjectChunkIds = (projectId: number | null, chapterId: number | null = null) => {
     const data = useLiveQuery(
         async () => {
             if (projectId === null) return [];
-            const chunks = await db.chunks
-                .where('projectId')
-                .equals(projectId)
-                .primaryKeys(); // More efficient than fetching objects and mapping
+            
+            let collection;
+            if (chapterId) {
+                collection = db.chunks.where('chapterId').equals(chapterId);
+            } else {
+                collection = db.chunks.where('projectId').equals(projectId);
+            }
+            
+            const chunks = await collection.primaryKeys();
             return chunks as number[];
         },
-        [projectId]
+        [projectId, chapterId]
     );
     
     return {

@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Project, Chunk, Job, LogEntry } from '../types/schema';
+import type { Project, Chunk, Job, LogEntry, Chapter } from '../types/schema';
 
 export interface AudioCacheRecord {
   hash: string;
@@ -7,11 +7,12 @@ export interface AudioCacheRecord {
   byteSize: number;   
   mimeType: string;
   createdAt: Date;
-  lastAccessedAt: Date; // [CRITICAL] Added for LRU Eviction Policy
+  lastAccessedAt: Date;
 }
 
 class ReadReadDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
+  chapters!: EntityTable<Chapter, 'id'>; // [NEW]
   chunks!: EntityTable<Chunk, 'id'>;
   audioCache!: EntityTable<AudioCacheRecord, 'hash'>;
   jobs!: EntityTable<Job, 'id'>;
@@ -20,10 +21,12 @@ class ReadReadDB extends Dexie {
   constructor() {
     super('ReadReadAI_DB');
     
-    this.version(1).stores({ // [BUMP] Version 2 for LRU index
+    // [BUMP] Version 2: Added Chapters and related indexing for hierarchy
+    this.version(1).stores({
         projects: '++id, name, createdAt',
-        chunks: '++id, projectId, [projectId+orderInProject]',
-        // [OPTIMIZATION] Index lastAccessedAt for fast LRU queries
+        chapters: '++id, projectId, [projectId+orderInProject]',
+        // [INDEX] Added chapterId and composite index for scoped timeline rendering
+        chunks: '++id, projectId, chapterId, [projectId+orderInProject], [chapterId+orderInProject]',
         audioCache: 'hash, lastAccessedAt', 
         jobs: '++id, chunkId, status, priority, [status+priority]',
         logs: '++id, timestamp, severity, component'

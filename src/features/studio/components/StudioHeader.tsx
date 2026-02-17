@@ -2,10 +2,11 @@ import React from 'react';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useTTSStore } from '../../tts/store/useTTSStore';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { useGlobalJobStatus } from '../../../shared/hooks/useQueries';
+import { useGlobalJobStatus, useProject, useChapter } from '../../../shared/hooks/useQueries';
 import { AVAILABLE_MODELS, ModelStatus } from '../../../shared/types/tts';
 import { ttsService } from '../../tts/services/TTSService';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
+import { SettingsMenu } from './SettingsMenu'; // [IMPORT: EPIC 3]
 import { logger } from '../../../shared/services/Logger';
 import { 
     Loader2, 
@@ -17,7 +18,8 @@ import {
     Layers, 
     Terminal, 
     Search,
-    Trash
+    ChevronRight,
+    Layout
 } from 'lucide-react';
 import { db } from '../../../shared/db';
 import { storage } from '../../../shared/services/storage';
@@ -26,10 +28,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Button } from '../../../shared/components/ui/button';
 
 export const StudioHeader: React.FC = () => {
-    const { activeProjectId, isExporting } = useProjectStore();
+    const { activeProjectId, activeChapterId, isExporting, setActiveChapter } = useProjectStore();
     const { modelStatus, availableVoices, progressPhase, progressPercent } = useTTSStore();
     const { activeModelId, setActiveModelId, storageMode } = useSystemStore();
     const { isWorking, pendingCount } = useGlobalJobStatus();
+
+    const { data: project } = useProject(activeProjectId);
+    const { data: chapter } = useChapter(activeChapterId);
 
     const handleModelChange = (val: string) => {
         setActiveModelId(val);
@@ -50,7 +55,19 @@ export const StudioHeader: React.FC = () => {
 
     return (
         <header className="h-14 border-b border-border flex items-center px-4 justify-between bg-background/80 backdrop-blur-md sticky top-0 z-50">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground mr-4">
+                    <Layout className="w-3.5 h-3.5" />
+                    <button 
+                        onClick={() => setActiveChapter(null)}
+                        className="hover:text-primary transition-colors"
+                    >
+                        {project?.name || 'Studio'}
+                    </button>
+                    <ChevronRight className="w-3 h-3 opacity-30" />
+                    <span className="text-foreground">{chapter?.name || 'All Content'}</span>
+                </div>
+
                 <button 
                     onClick={triggerSearch}
                     className="flex items-center gap-2 px-3 py-1.5 bg-secondary/40 border border-border rounded-lg hover:bg-secondary transition-all group"
@@ -63,7 +80,6 @@ export const StudioHeader: React.FC = () => {
 
                 <div className="h-4 w-[1px] bg-border mx-1" />
 
-                {/* EPIC 1: Replaced raw select with Radix Select */}
                 <div className="flex items-center gap-1">
                     <Select value={activeModelId} onValueChange={handleModelChange}>
                         <SelectTrigger className="w-[160px] bg-secondary/20 border-none hover:bg-secondary/40 h-8">
@@ -73,18 +89,6 @@ export const StudioHeader: React.FC = () => {
                         <SelectContent>
                             {AVAILABLE_MODELS.map(m => (
                                 <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-
-                    <Select disabled={modelStatus !== ModelStatus.READY}>
-                        <SelectTrigger className="w-[140px] bg-secondary/20 border-none hover:bg-secondary/40 h-8">
-                            <User className="w-3 h-3 mr-2 text-muted-foreground" />
-                            <SelectValue placeholder="Voice" />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {availableVoices.map(v => (
-                                <SelectItem key={v.id} value={v.id} className="text-xs">{v.name}</SelectItem>
                             ))}
                         </SelectContent>
                     </Select>
@@ -99,60 +103,28 @@ export const StudioHeader: React.FC = () => {
                         <Activity className="w-3 h-3" />
                         {modelStatus === ModelStatus.LOADING ? `${progressPhase} ${progressPercent}%` : modelStatus}
                     </div>
-
-                    {isWorking && (
-                        <div className="flex items-center gap-1.5 text-[10px] font-black text-primary animate-pulse bg-primary/5 px-2 py-1 rounded-md border border-primary/20">
-                            <Layers className="w-3 h-3" />
-                            <span>SYNCING {pendingCount}</span>
-                        </div>
-                    )}
                 </div>
             </div>
 
             <div className="flex items-center gap-2">
-                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground font-bold tracking-widest mr-4 bg-secondary/30 px-2 py-1 rounded">
-                    <HardDrive className="w-3 h-3" />
-                    {storageMode}
-                </div>
+                {/* [EPIC 3] Settings Menu Addition */}
+                <SettingsMenu />
 
                 <Button variant="ghost" size="icon" onClick={() => logger.exportLogs()} title="Diagnostic Bundle">
                     <Terminal className="w-4 h-4" />
                 </Button>
 
                 {activeProjectId && (
-                    <>
-                        {/* EPIC 1: Replaced window.confirm with Dialog */}
-                        <Dialog>
-                            <DialogTrigger asChild>
-                                <Button variant="ghost" size="icon" title="Purge Cache">
-                                    <Loader2 className="w-4 h-4" />
-                                </Button>
-                            </DialogTrigger>
-                            <DialogContent>
-                                <DialogHeader>
-                                    <DialogTitle>Purge Project Cache?</DialogTitle>
-                                </DialogHeader>
-                                <div className="py-4 text-sm text-muted-foreground">
-                                    This will delete all generated audio files for this project. They will be re-synthesized automatically.
-                                </div>
-                                <div className="flex justify-end gap-2">
-                                    <Button variant="outline" onClick={() => {}}>Cancel</Button>
-                                    <Button variant="destructive" onClick={handleClearCache}>Purge Everything</Button>
-                                </div>
-                            </DialogContent>
-                        </Dialog>
-
-                        <Button 
-                            variant="primary" 
-                            size="sm" 
-                            onClick={() => ProjectRepository.exportProjectAudio(activeProjectId)}
-                            disabled={isExporting}
-                            className="font-black tracking-widest text-[10px]"
-                        >
-                            {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
-                            EXPORT ZIP
-                        </Button>
-                    </>
+                    <Button 
+                        variant="primary" 
+                        size="sm" 
+                        onClick={() => ProjectRepository.exportProjectAudio(activeProjectId)}
+                        disabled={isExporting}
+                        className="font-black tracking-widest text-[10px]"
+                    >
+                        {isExporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-2" />}
+                        EXPORT ZIP
+                    </Button>
                 )}
             </div>
         </header>

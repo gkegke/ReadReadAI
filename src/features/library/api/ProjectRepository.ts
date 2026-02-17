@@ -4,9 +4,10 @@ import { importService } from '../../../shared/services/ImportService';
 import { exportService } from '../../../shared/services/ExportService';
 import { ProjectSchema, type Project, type Chunk } from '../../../shared/types/schema';
 import { ChunkRepository } from '../../studio/api/ChunkRepository';
+import { ChapterRepository } from './ChapterRepository'; // [NEW]
 import { hashText } from '../../../shared/lib/text-processor';
 import { AudioGenerationService } from '../../tts/services/AudioGenerationService';
-import { BaseRepository as SharedBaseRepository } from '../../../shared/api/BaseRepository'; // FIXED PATH
+import { BaseRepository as SharedBaseRepository } from '../../../shared/api/BaseRepository';
 
 class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof ProjectSchema> {
     constructor() {
@@ -24,8 +25,9 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
     }
 
     async deleteProject(id: number): Promise<void> {
-        await db.transaction('rw', [db.projects, db.chunks, db.jobs], async () => {
+        await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs], async () => {
             await this.delete(id);
+            await db.chapters.where('projectId').equals(id).delete();
             await db.chunks.where('projectId').equals(id).delete();
             await db.jobs.where('projectId').equals(id).delete();
         });
@@ -40,11 +42,18 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         
         const result = await importService.importFile(file, activeProjectId);
         
-        await db.transaction('rw', [db.projects, db.chunks, db.jobs], async () => {
+        await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs], async () => {
+            // [EPIC 2] Clear existing hierarchy for this project if re-importing
+            await db.chapters.where('projectId').equals(activeProjectId).delete();
             await db.chunks.where('projectId').equals(activeProjectId).delete();
             await db.jobs.where('projectId').equals(activeProjectId).delete();
             
-            const newIds = await ChunkRepository.bulkAdd(result.chunks);
+            // Create a default chapter for document imports
+            const chapterId = await ChapterRepository.createChapter(activeProjectId, file.name || "Imported Document");
+
+            const chunksWithChapter = result.chunks.map(c => ({ ...c, chapterId }));
+            const newIds = await ChunkRepository.bulkAdd(chunksWithChapter);
+            
             await this.update(activeProjectId, { 
                 sourceFileName: result.fileName, 
                 updatedAt: new Date() 
@@ -61,9 +70,14 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         const result = await importService.importText(text, activeProjectId);
         const count = await db.chunks.where('projectId').equals(activeProjectId).count();
         
-        await db.transaction('rw', [db.chunks, db.projects, db.jobs], async () => {
+        await db.transaction('rw', [db.chapters, db.chunks, db.projects, db.jobs], async () => {
+            // [EPIC 2] Create a logical section for the pasted text
+            const chapterName = `Clip ${new Date().toLocaleTimeString()}`;
+            const chapterId = await ChapterRepository.createChapter(activeProjectId, chapterName);
+
             const chunksToAdd = result.chunks.map((c, i) => ({ 
                 ...c, 
+                chapterId, // [NEW] link to new section
                 orderInProject: count + i,
                 cleanTextHash: hashText(c.textContent)
             }));

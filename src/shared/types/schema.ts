@@ -14,11 +14,24 @@ export const ProjectSchema = z.object({
   updatedAt: z.date(),
 });
 
+/**
+ * [NEW] Chapter Schema
+ * [CRITICAL: 10/10] Provides the mid-level hierarchy needed for long-form content.
+ */
+export const ChapterSchema = z.object({
+  id: z.number().optional(),
+  projectId: z.number(),
+  name: z.string().min(1, "Chapter name is required"),
+  orderInProject: z.number(),
+  createdAt: z.date(),
+});
+
 export const ChunkStatusSchema = z.enum(['pending', 'processing', 'generated', 'failed_tts']);
 
 export const ChunkSchema = z.object({
   id: z.number().optional(),
   projectId: z.number(),
+  chapterId: z.number().optional(), // [RELATIONAL] Link to Chapter entity
   orderInProject: z.number(),
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),
@@ -45,10 +58,6 @@ export const JobSchema = z.object({
     createdAt: z.date(),
 });
 
-/**
- * [STABILITY] Worker Input Schemas
- * These define the contract between the Main Thread and Workers.
- */
 export const IngestWorkerSchema = {
     processFile: z.object({
         file: z.instanceof(File),
@@ -89,6 +98,7 @@ export const LogSchema = z.object({
 
 export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
+export type Chapter = z.infer<typeof ChapterSchema>;
 export type Chunk = z.infer<typeof ChunkSchema>;
 export type ChunkStatus = z.infer<typeof ChunkStatusSchema>;
 export type Job = z.infer<typeof JobSchema>;
