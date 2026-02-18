@@ -52,8 +52,9 @@ export const useGenerateAudioMutation = () => {
 export const useSplitChunkMutation = () => {
     return useMutation({
         mutationFn: async ({ id, cursor }: { id: number, cursor: number }) => {
-             // Implementation pending in ProjectRepository
-             console.log("Split not yet implemented", id, cursor);
-        }
+             return ChunkRepository.splitChunk(id, cursor);
+        },
+        onError: (err) => console.error('[Mutation] Split Chunk Failed', err),
     });
 };
+
