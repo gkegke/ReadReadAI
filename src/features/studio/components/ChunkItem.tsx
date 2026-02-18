@@ -1,36 +1,16 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
-import { useSystemStore } from '../../../shared/store/useSystemStore'; // [EPIC 3]
-import { PlayCircle, PauseCircle, Loader2, Edit3, Check } from 'lucide-react';
+import { useSystemStore } from '../../../shared/store/useSystemStore';
+import { PlayCircle, PauseCircle, Loader2, Edit3, Check, GripVertical } from 'lucide-react';
 import { useServices } from '../../../shared/context/ServiceContext';
 import { WaveformPlayer } from './WaveformPlayer';
 import { WaveformCanvas } from './WaveformCanvas';
 import { PlaybackState } from '../services/AudioPlaybackService';
 import { useUpdateChunkTextMutation } from '../../../shared/hooks/useMutations';
-import { cva } from 'class-variance-authority';
 import { cn } from '../../../shared/lib/utils';
 import type { Chunk } from '../../../shared/types/schema';
-
-const chunkVariants = {
-    container: cva(
-        "group relative pl-6 border-l-2 py-4 transition-all duration-500 ease-in-out", // Added duration
-        {
-            variants: {
-                active: { true: "border-primary", false: "border-transparent hover:border-border" }
-            },
-            defaultVariants: { active: false }
-        }
-    ),
-    card: cva(
-        "rounded-xl p-5 border transition-all duration-300",
-        {
-            variants: {
-                active: { true: "bg-secondary/30 border-border shadow-sm", false: "border-transparent hover:bg-secondary/10" }
-            },
-            defaultVariants: { active: false }
-        }
-    )
-};
 
 interface ChunkItemProps {
   chunk: Chunk;
@@ -39,21 +19,32 @@ interface ChunkItemProps {
 
 export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
   const { playbackState, isPlaying: isGlobalPlaying } = useAudioStore();
-  const { isZenMode } = useSystemStore(); // [EPIC 3] Zen Mode Consumption
+  const { isZenMode } = useSystemStore();
   const { playback, storage, logger } = useServices();
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   
-  // [Epic 4] Editor State
+  // [EPIC 3: Drag & Drop Support]
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: chunk.id! });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 100 : 1,
+  };
+
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(chunk.textContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { mutate: updateText, isPending: isSaving } = useUpdateChunkTextMutation();
 
   const isPlaying = isActive && playbackState === PlaybackState.PLAYING;
-
-  // [EPIC 3] Zen Mode Logic
-  // If Zen mode is ON, and we are playing audio globally, and this item is NOT active...
-  // ...then we dim it, blur it slightly, and grayscale it to reduce cognitive load.
   const isDimmed = isZenMode && isGlobalPlaying && !isActive;
 
   useEffect(() => {
@@ -66,17 +57,8 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
       return () => { isMounted = false; };
   }, [isActive, chunk.generatedFilePath, chunk.status, storage]);
 
-  // [Epic 4] Handle Auto-resize
-  useEffect(() => {
-    if (isEditing && textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
-    }
-  }, [isEditing, editText]);
-
   const handleSave = () => {
       if (editText !== chunk.textContent) {
-          logger.info('Editor', `Updating chunk ${chunk.id}`, { length: editText.length });
           updateText({ id: chunk.id!, text: editText });
       }
       setIsEditing(false);
@@ -93,83 +75,77 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
 
   return (
     <div 
+        ref={setNodeRef}
+        style={style}
         className={cn(
-            chunkVariants.container({ active: isActive }),
-            // [EPIC 3] Visual Application of Zen Mode
-            isDimmed && "opacity-20 blur-[1px] grayscale scale-[0.99] pointer-events-none"
+            "group relative pl-12 pr-4 py-6 transition-all duration-500 rounded-2xl",
+            isActive ? "bg-secondary/20 shadow-inner" : "hover:bg-secondary/5",
+            isDimmed && "opacity-20 blur-[1.5px] grayscale pointer-events-none scale-[0.98]",
+            isDragging && "opacity-50 scale-105 shadow-2xl bg-primary/5"
         )}
     >
-      <div className={chunkVariants.card({ active: isActive })}>
-        
-        {/* [Epic 4] Contextual Editor UI */}
-        <div className="relative group/editor">
+      {/* Tactical Drag Handle */}
+      <button 
+        {...attributes} 
+        {...listeners}
+        className="absolute left-4 top-1/2 -translate-y-1/2 p-2 opacity-0 group-hover:opacity-30 hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+      >
+        <GripVertical className="w-4 h-4" />
+      </button>
+
+      <div className="relative group/editor">
             {isEditing ? (
                 <textarea
                     ref={textareaRef}
                     autoFocus
-                    className="w-full bg-background border border-primary/30 rounded-lg p-2 text-lg font-serif leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/10 resize-none"
+                    className="w-full bg-background border border-primary/30 rounded-lg p-2 text-xl font-serif leading-relaxed focus:outline-none focus:ring-2 focus:ring-primary/10 resize-none"
                     value={editText}
                     onChange={(e) => setEditText(e.target.value)}
                     onBlur={handleSave}
-                    onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSave();
-                        }
-                    }}
                 />
             ) : (
                 <p 
                     onDoubleClick={() => setIsEditing(true)}
                     className={cn(
-                        "text-lg font-serif leading-relaxed mb-4 cursor-text selection:bg-primary/10 transition-all",
-                        // [EPIC 3] Active Font Scaling
-                        isActive && isZenMode ? "text-xl font-medium tracking-wide" : ""
+                        "text-xl font-serif leading-relaxed mb-6 cursor-text selection:bg-primary/20 transition-all",
+                        isActive ? "text-primary font-medium tracking-wide" : "text-foreground/80"
                     )}
                 >
                     {chunk.textContent}
-                    <button 
-                        onClick={() => setIsEditing(true)}
-                        className="ml-2 opacity-0 group-hover/editor:opacity-40 hover:opacity-100 transition-opacity"
-                    >
-                        <Edit3 className="w-3.5 h-3.5 inline" />
-                    </button>
                 </p>
             )}
-        </div>
+      </div>
         
-        <div className="h-12 flex items-center">
-            {chunk.status === 'processing' || isSaving ? (
-                <div className="w-full flex items-center gap-2 text-muted-foreground animate-pulse">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">
-                        {isSaving ? 'Re-writing...' : 'Synthesizing...'}
-                    </span>
-                </div>
-            ) : isActive && audioBlob ? (
-                <WaveformPlayer blob={audioBlob} isActive={isActive} chunkId={chunk.id!} />
-            ) : chunk.waveformPeaks ? (
-                <WaveformCanvas peaks={chunk.waveformPeaks} />
-            ) : (
-                <div className="w-full h-[2px] bg-border/30 rounded-full" />
-            )}
-        </div>
+      <div className="h-10 flex items-center gap-4">
+            <div className="flex-1">
+                {chunk.status === 'processing' || isSaving ? (
+                    <div className="w-full h-1 bg-secondary rounded-full overflow-hidden">
+                        <div className="h-full bg-primary animate-shimmer w-full" />
+                    </div>
+                ) : isActive && audioBlob ? (
+                    <WaveformPlayer blob={audioBlob} isActive={isActive} chunkId={chunk.id!} />
+                ) : chunk.waveformPeaks ? (
+                    <div className="opacity-20"><WaveformCanvas peaks={chunk.waveformPeaks} height={32} /></div>
+                ) : (
+                    <div className="w-full h-[1px] bg-border/20" />
+                )}
+            </div>
 
-        <div className="flex items-center justify-between mt-4">
-            <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground opacity-50">
+            <div className="flex items-center gap-3 shrink-0">
+                <span className="text-[9px] font-black uppercase tracking-widest opacity-30">
                     {chunk.status}
                 </span>
-                {chunk.status === 'generated' && <Check className="w-3 h-3 text-green-500" />}
+                <button 
+                    onClick={handlePlay} 
+                    disabled={chunk.status !== 'generated'}
+                    className={cn(
+                        "transition-all hover:scale-110 active:scale-90 disabled:opacity-10",
+                        isPlaying ? "text-primary" : "text-muted-foreground hover:text-primary"
+                    )}
+                >
+                    {isPlaying ? <PauseCircle className="w-8 h-8" /> : <PlayCircle className="w-8 h-8" />}
+                </button>
             </div>
-            <button 
-                onClick={handlePlay} 
-                disabled={chunk.status !== 'generated'}
-                className="text-primary hover:scale-110 transition-transform disabled:opacity-20"
-            >
-                {isPlaying ? <PauseCircle /> : <PlayCircle />}
-            </button>
-        </div>
       </div>
     </div>
   );

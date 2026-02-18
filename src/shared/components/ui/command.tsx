@@ -91,6 +91,21 @@ const CommandGroup = React.forwardRef<
 ))
 CommandGroup.displayName = CommandPrimitive.Group.displayName
 
+/**
+ * [FIX] Added CommandSeparator (Epic 4 Support)
+ */
+const CommandSeparator = React.forwardRef<
+  React.ElementRef<typeof CommandPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof CommandPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <CommandPrimitive.Separator
+    ref={ref}
+    className={cn("-mx-1 h-px bg-border/50", className)}
+    {...props}
+  />
+))
+CommandSeparator.displayName = CommandPrimitive.Separator.displayName
+
 const CommandItem = React.forwardRef<
   React.ElementRef<typeof CommandPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof CommandPrimitive.Item>
@@ -114,4 +129,5 @@ export {
   CommandEmpty,
   CommandGroup,
   CommandItem,
+  CommandSeparator, // [FIX] Exported missing primitive
 }

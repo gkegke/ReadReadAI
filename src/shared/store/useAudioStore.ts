@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { audioPlaybackService, PlaybackState } from '../../features/studio/services/AudioPlaybackService';
+import { ChunkRepository } from '../../features/studio/api/ChunkRepository'; // Import Repo
 
 interface AudioState {
   playbackState: PlaybackState;
@@ -18,8 +19,6 @@ interface AudioState {
 
 export const useAudioStore = create<AudioState>((set, get) => {
   
-  // CRITICAL (Architecture Score: 10/10): Subscribe to the FSM Actor.
-  // This pattern decouples the UI from the Audio Engine while maintaining perfect sync.
   audioPlaybackService.actor.subscribe((snapshot) => {
       set({ 
           playbackState: snapshot.value as PlaybackState,
@@ -49,8 +48,23 @@ export const useAudioStore = create<AudioState>((set, get) => {
       audioPlaybackService.toggle();
     },
     
-    playNext: () => {
-      console.log("[AudioStore] Signal: Chunk finished. Engine should look ahead.");
+    /**
+     * [CRITICAL] Auto-Advance Logic
+     * Queries the next sequential chunk. If found, plays it. 
+     * If not, the queue ends.
+     */
+    playNext: async () => {
+      const { activeChunkId } = get();
+      if (activeChunkId) {
+          const nextChunk = await ChunkRepository.getNext(activeChunkId);
+          if (nextChunk) {
+              // We set the active ID, which triggers the useEffect in usePlaybackEngine
+              // to load the audio blob and send it to the service.
+              set({ activeChunkId: nextChunk.id, currentTime: 0, duration: 0 });
+          } else {
+              set({ playbackState: PlaybackState.IDLE });
+          }
+      }
     },
 
     setTime: (currentTime, duration) => set({ currentTime, duration })

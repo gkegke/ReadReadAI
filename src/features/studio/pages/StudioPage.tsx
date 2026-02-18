@@ -2,20 +2,27 @@ import React, { useEffect } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { Timeline } from '../components/Timeline';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
-import { usePlaybackEngine } from '../hooks/usePlaybackEngine';
+import { projectRoute } from '../../../app/router'; // [IMPORT: Type-safe route]
 
+/**
+ * StudioPage
+ * The main canvas for audio synthesis and editing.
+ */
 export const StudioPage: React.FC = () => {
-    const { projectId } = useParams({ from: '/project/$projectId' });
+    // [FIX] Reference the route object directly to satisfy TanStack Router's invariant
+    const { projectId } = useParams({ from: projectRoute.id });
     const { setActiveProject } = useProjectStore();
     
-    // Activate the "DJ" engine for this project
-    usePlaybackEngine();
-
     useEffect(() => {
         const id = parseInt(projectId);
         if (!isNaN(id)) {
             setActiveProject(id);
         }
+        
+        // [CLEANUP] Ensure system state is reset when leaving the Studio
+        return () => {
+            setActiveProject(null);
+        };
     }, [projectId, setActiveProject]);
 
     return (

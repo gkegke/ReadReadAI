@@ -1,29 +1,43 @@
-import { createRootRoute, createRoute, createRouter, Outlet } from '@tanstack/react-router';
+import { createRootRoute, createRoute, createRouter } from '@tanstack/react-router';
 import App from './App';
 import { StudioPage } from '../features/studio/pages/StudioPage';
 import { DashboardPage } from '../features/library/pages/DashboardPage';
+import { DashboardLayout } from '../shared/components/layouts/DashboardLayout';
+import { StudioLayout } from '../shared/components/layouts/StudioLayout';
 
 const rootRoute = createRootRoute({
-  component: () => (
-    <App>
-      <Outlet />
-    </App>
-  ),
+  component: App,
 });
 
-const indexRoute = createRoute({
+// [STABILITY] Explicitly exported for use in useParams/useNavigate
+export const dashboardLayoutRoute = createRoute({
   getParentRoute: () => rootRoute,
+  id: 'dashboard',
+  component: DashboardLayout,
+});
+
+export const studioLayoutRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  id: 'studio',
+  component: StudioLayout,
+});
+
+export const indexRoute = createRoute({
+  getParentRoute: () => dashboardLayoutRoute,
   path: '/',
   component: DashboardPage,
 });
 
-const projectRoute = createRoute({
-  getParentRoute: () => rootRoute,
+export const projectRoute = createRoute({
+  getParentRoute: () => studioLayoutRoute,
   path: '/project/$projectId',
   component: StudioPage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, projectRoute]);
+const routeTree = rootRoute.addChildren([
+  dashboardLayoutRoute.addChildren([indexRoute]),
+  studioLayoutRoute.addChildren([projectRoute]),
+]);
 
 export const router = createRouter({ routeTree });
 

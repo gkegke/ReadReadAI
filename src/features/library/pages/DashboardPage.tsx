@@ -1,11 +1,20 @@
 import React from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import { useProjects } from '../../../shared/hooks/useQueries';
-import { FileText, Clock, LayoutGrid } from 'lucide-react';
+import { FileText, Clock, LayoutGrid, Zap, Plus } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
+import { ProjectRepository } from '../api/ProjectRepository';
+import { Button } from '../../../shared/components/ui/button';
 import { CreateProjectDialog } from '../components/CreateProjectDialog';
 
 export const DashboardPage: React.FC = () => {
+    const navigate = useNavigate();
     const { data: projects, isLoading } = useProjects();
+
+    const handleQuickStart = async () => {
+        const id = await ProjectRepository.createProject(`Session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
+        navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
+    };
 
     return (
         <div className="h-full overflow-y-auto p-8 bg-background selection:bg-primary/10">
@@ -18,8 +27,19 @@ export const DashboardPage: React.FC = () => {
                         </div>
                         <h1 className="text-4xl font-black tracking-tight">STUDIO</h1>
                     </div>
-                    {/* EPIC 1: Replaced window.prompt with Dialog */}
-                    <CreateProjectDialog />
+                    
+                    <div className="flex items-center gap-3">
+                        {/* [STORY 5] Frictionless Entry */}
+                        <Button 
+                            variant="secondary"
+                            onClick={handleQuickStart}
+                            className="font-black tracking-widest text-xs h-12 px-6 rounded-2xl border-2 border-primary/10 hover:border-primary/30 transition-all"
+                        >
+                            <Zap className="w-4 h-4 mr-2 text-amber-500 fill-amber-500" />
+                            QUICK START
+                        </Button>
+                        <CreateProjectDialog />
+                    </div>
                 </header>
 
                 {isLoading ? (
@@ -27,6 +47,12 @@ export const DashboardPage: React.FC = () => {
                         {[1, 2, 3].map(i => (
                             <div key={i} className="h-40 bg-secondary/20 animate-pulse rounded-2xl border border-border" />
                         ))}
+                    </div>
+                ) : projects.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-border rounded-3xl opacity-50">
+                        <Plus className="w-12 h-12 mb-4" />
+                        <p className="font-bold uppercase tracking-widest text-xs">No Projects Found</p>
+                        <Button variant="link" onClick={handleQuickStart}>Create your first project</Button>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">

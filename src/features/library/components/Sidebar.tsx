@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
-import { useProjects, useProjectChapters } from '../../../shared/hooks/useQueries';
+import { useProjects } from '../../../shared/hooks/useQueries';
 import { ProjectRepository } from '../api/ProjectRepository';
-import { ProjectProgressMap } from './ProjectProgressMap'; // [IMPORT: EPIC 3]
-import { Plus, Trash2, FileText, Loader2, Layers, Hash } from 'lucide-react';
+import { Plus, Trash2, FileText, Loader2 } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
 import { cva } from 'class-variance-authority';
 
@@ -20,10 +19,14 @@ const sidebarItemVariants = cva(
     }
 );
 
+/**
+ * Sidebar (Epic 2 Cleaned)
+ * Now strictly acts as a "File System" for Project navigation.
+ * Chapter management is handled inside the Studio via the ChapterOutline.
+ */
 export const Sidebar: React.FC = () => {
   const { data: projects, isLoading } = useProjects();
-  const { activeProjectId, setActiveProject, activeChapterId, setActiveChapter } = useProjectStore();
-  const { data: chapters } = useProjectChapters(activeProjectId);
+  const { activeProjectId, setActiveProject } = useProjectStore();
 
   const [isCreating, setIsCreating] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
@@ -93,36 +96,6 @@ export const Sidebar: React.FC = () => {
                                 </button>
                             )}
                         </div>
-
-                        {isActive && (
-                            <div className="ml-4 pl-2 border-l border-primary/20 mt-2 space-y-1 animate-in slide-in-from-left-2 duration-200">
-                                {/* [EPIC 3: STORY 7] Project Heatmap Integration */}
-                                <ProjectProgressMap projectId={project.id!} chapterId={activeChapterId} />
-
-                                <button 
-                                    onClick={() => setActiveChapter(null)}
-                                    className={cn(
-                                        "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[10px] uppercase tracking-wider transition-colors",
-                                        activeChapterId === null ? "text-primary font-black bg-primary/5" : "text-muted-foreground hover:text-foreground"
-                                    )}
-                                >
-                                    <Layers className="w-3 h-3" /> All Content
-                                </button>
-                                {chapters.map(chapter => (
-                                    <button 
-                                        key={chapter.id}
-                                        onClick={() => setActiveChapter(chapter.id!)}
-                                        className={cn(
-                                            "w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-[11px] font-medium transition-colors",
-                                            activeChapterId === chapter.id ? "text-primary bg-primary/5 font-bold" : "text-muted-foreground hover:text-foreground"
-                                        )}
-                                    >
-                                        <Hash className="w-3 h-3 opacity-40" />
-                                        <span className="truncate">{chapter.name}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        )}
                     </div>
                 );
               })}
@@ -130,7 +103,7 @@ export const Sidebar: React.FC = () => {
         </div>
 
         <div className="p-4 border-t border-border bg-secondary/10">
-            <div className="text-[10px] font-mono opacity-50 uppercase tracking-tighter text-center">Studio v0.9.0-EPIC3</div>
+            <div className="text-[10px] font-mono opacity-50 uppercase tracking-tighter text-center">Library v0.9.0</div>
         </div>
     </aside>
   );
