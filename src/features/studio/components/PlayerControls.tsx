@@ -9,7 +9,6 @@ export const PlayerControls: React.FC = () => {
   const { isPlaying, togglePlay, activeChunkId, setActiveChunkId, playbackSpeed, setPlaybackSpeed, currentTime, duration } = useAudioStore();
   const { activeProjectId } = useProjectStore();
   
-  // Use IDs instead of full objects
   const { data: chunkIds } = useProjectChunkIds(activeProjectId);
 
   if (!activeProjectId || !chunkIds || chunkIds.length === 0) return null;
@@ -34,37 +33,38 @@ export const PlayerControls: React.FC = () => {
   };
 
   return (
-    <div className="fixed bottom-0 left-64 right-0 bg-background/95 backdrop-blur border-t border-border p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] z-50">
-      <div className="flex items-center justify-between mb-2">
-          <div className="flex flex-col min-w-[200px]">
-              <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Now Playing</span>
-              <span className="text-sm font-medium truncate max-w-[300px]">
-                  {activeChunkId ? `Chunk #${currentChunkIndex + 1}` : 'Select a chunk'}
+    // [STORY: GLASSMORPHISM] Integrated glass-panel component class
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl glass-panel rounded-3xl p-4 shadow-2xl border border-white/10 z-50">
+      <div className="flex items-center justify-between mb-4 px-2">
+          <div className="flex flex-col min-w-[140px]">
+              <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">Timeline</span>
+              <span className="text-xs font-bold truncate opacity-80">
+                  {activeChunkId ? `Block ${currentChunkIndex + 1} of ${chunkIds.length}` : 'Select a block'}
               </span>
           </div>
           
           <div className="flex items-center gap-6">
-             <button onClick={handlePrev} disabled={!hasPrev} className="text-foreground/70 hover:text-foreground disabled:opacity-30"><SkipBack className="w-6 h-6" fill="currentColor" /></button>
-             <button onClick={togglePlay} disabled={!activeChunkId} className={cn("w-12 h-12 rounded-full flex items-center justify-center hover:scale-105 active:scale-95 transition-all", isPlaying ? "bg-secondary text-foreground" : "bg-foreground text-background")}>
-                 {isPlaying ? <Pause className="w-6 h-6" fill="currentColor" /> : <Play className="w-6 h-6 ml-1" fill="currentColor" />}
+             <button onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
+             <button onClick={togglePlay} disabled={!activeChunkId} className={cn("w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background")}>
+                 {isPlaying ? <Pause className="w-7 h-7" fill="currentColor" /> : <Play className="w-7 h-7 ml-1" fill="currentColor" />}
              </button>
-             <button onClick={handleNext} disabled={!hasNext} className="text-foreground/70 hover:text-foreground disabled:opacity-30"><SkipForward className="w-6 h-6" fill="currentColor" /></button>
+             <button onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
           </div>
 
-          <div className="flex items-center justify-end min-w-[200px]">
-              <button onClick={toggleSpeed} className="text-xs font-mono font-medium px-3 py-1 bg-secondary rounded hover:bg-secondary/80 w-16">{playbackSpeed}x</button>
+          <div className="flex items-center justify-end min-w-[140px]">
+              <button onClick={toggleSpeed} className="text-[10px] font-black tracking-widest bg-primary/5 hover:bg-primary/10 px-4 py-1.5 rounded-full transition-colors">{playbackSpeed}X</button>
           </div>
       </div>
 
-      <div className="flex items-center gap-3 text-xs font-mono text-muted-foreground">
-          <span>{formatTime(currentTime)}</span>
-          <div className="flex-1 h-1.5 bg-secondary rounded-full overflow-hidden relative">
+      <div className="flex items-center gap-4 px-2">
+          <span className="text-[10px] font-mono opacity-40">{formatTime(currentTime)}</span>
+          <div className="flex-1 h-1.5 bg-primary/5 rounded-full overflow-hidden relative">
               <div 
-                className="h-full bg-primary transition-all duration-300 ease-linear" 
+                className="h-full bg-primary transition-all duration-300 ease-linear shadow-[0_0_8px_rgba(var(--primary),0.3)]" 
                 style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }} 
               />
           </div>
-          <span>{formatTime(duration)}</span>
+          <span className="text-[10px] font-mono opacity-40">{formatTime(duration)}</span>
       </div>
     </div>
   );

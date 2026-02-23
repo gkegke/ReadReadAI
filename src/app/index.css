@@ -4,6 +4,7 @@
 
 @layer base {
   :root {
+    /* Standard Shadcn/Tailwind variable format: H S% L% */
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
@@ -54,18 +55,30 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
   }
 }
 
-/* Custom Animation for Processing State */
+/* [STORY: GLASSMORPHISM] Standardized depth utilities */
+@layer components {
+  .glass-header {
+    /* This will now work correctly because of the config update */
+    @apply bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-50;
+  }
+  
+  .glass-sidebar {
+    @apply bg-secondary/30 backdrop-blur-xl border-r border-border;
+  }
+
+  .glass-panel {
+    @apply bg-background/95 backdrop-blur-lg border-t border-border;
+  }
+}
+
+/* Custom Animation for Processing State preserved */
 @keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .animate-shimmer {
@@ -76,19 +89,6 @@
     rgba(var(--primary), 0.1) 50%,
     rgba(var(--primary-foreground), 0.1) 75%,
     rgba(255, 255, 255, 0) 100%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 2s infinite linear;
-}
-
-.dark .animate-shimmer {
-    background: linear-gradient(
-    90deg,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(255, 255, 255, 0.05) 25%,
-    rgba(255, 255, 255, 0.1) 50%,
-    rgba(255, 255, 255, 0.05) 75%,
-    rgba(0, 0, 0, 0) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 2s infinite linear;

@@ -22,10 +22,6 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../shared/components/ui/select';
 import { Button } from '../../../shared/components/ui/button';
 
-/**
- * StudioHeader (Epic 2 Refactor)
- * Focuses on project context and metadata editing.
- */
 export const StudioHeader: React.FC = () => {
     const navigate = useNavigate();
     const { projectId } = useParams({ from: projectRoute.id });
@@ -44,7 +40,6 @@ export const StudioHeader: React.FC = () => {
         if (project?.name) setTitle(project.name);
     }, [project?.name]);
 
-    // [STORY 4] Persistence of project name on blur
     const handleTitleBlur = async () => {
         const pId = activeProjectId || parseInt(projectId);
         if (!pId || !title.trim() || title === project?.name) return;
@@ -52,9 +47,6 @@ export const StudioHeader: React.FC = () => {
         setIsSaving(true);
         try {
             await ProjectRepository.update(pId, { name: title, updatedAt: new Date() });
-            logger.info('Studio', `Project renamed to: ${title}`);
-        } catch (err) {
-            logger.error('Studio', 'Failed to rename project', err);
         } finally {
             setIsSaving(false);
         }
@@ -66,38 +58,32 @@ export const StudioHeader: React.FC = () => {
     };
 
     return (
-        <header className="h-14 border-b border-border flex items-center px-4 justify-between bg-background/80 backdrop-blur-md sticky top-0 z-50">
+        // [STORY: GLASSMORPHISM] Integrated glass-header component class
+        <header className="glass-header h-14 flex items-center px-6 justify-between">
             <div className="flex items-center gap-4">
                 <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={() => navigate({ to: '/' })}
                     className="hover:bg-secondary rounded-full w-8 h-8"
-                    title="Back to Library"
                 >
                     <ChevronLeft className="w-5 h-5" />
                 </Button>
 
-                <div className="h-6 w-[1px] bg-border mx-1" />
+                <div className="flex items-center gap-3">
+                    <input 
+                        value={title}
+                        onChange={(e) => setTitle(e.target.value)}
+                        onBlur={handleTitleBlur}
+                        className="bg-transparent border-none font-bold text-sm p-0 focus:ring-0 w-auto min-w-[50px] max-w-[300px] truncate hover:bg-secondary/40 rounded-md px-2 py-1 transition-colors"
+                        placeholder="Untitled Project"
+                    />
+                    {isSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
 
-                <div className="flex items-center gap-2 overflow-hidden">
-                    {/* [STORY 4] Notion-style editable title */}
-                    <div className="relative group flex items-center">
-                        <input 
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            onBlur={handleTitleBlur}
-                            className="bg-transparent border-none font-black text-sm p-0 focus:ring-0 w-auto min-w-[50px] max-w-[200px] truncate hover:bg-secondary/50 rounded px-1 transition-colors"
-                            placeholder="Untitled Project"
-                        />
-                        {isSaving && <Loader2 className="w-3 h-3 animate-spin ml-2 opacity-40" />}
-                    </div>
-
-                    {/* [STORY 3] Breadcrumb breadcrumb */}
                     {chapter && (
                         <>
                             <span className="text-muted-foreground/30 font-light">/</span>
-                            <span className="text-[10px] font-bold text-primary flex items-center gap-1 uppercase tracking-tighter bg-primary/5 px-2 py-0.5 rounded border border-primary/10 animate-in fade-in slide-in-from-left-2">
+                            <span className="text-[10px] font-black text-primary flex items-center gap-1 uppercase tracking-widest bg-primary/5 px-2.5 py-1 rounded-full border border-primary/10">
                                 <Hash className="w-3 h-3 opacity-50" />
                                 {chapter.name}
                             </span>
@@ -107,10 +93,10 @@ export const StudioHeader: React.FC = () => {
             </div>
 
             <div className="flex items-center gap-3">
-                <div className="hidden md:flex items-center gap-1 bg-secondary/30 rounded-lg px-2 h-8 border border-border/50">
-                    <Cpu className="w-3 h-3 text-muted-foreground ml-1" />
+                <div className="hidden md:flex items-center gap-1 bg-secondary/50 rounded-full px-3 h-8 border border-border/50">
+                    <Cpu className="w-3 h-3 text-muted-foreground" />
                     <Select value={activeModelId} onValueChange={handleModelChange}>
-                        <SelectTrigger className="w-[140px] border-none bg-transparent h-7 text-[11px] font-bold">
+                        <SelectTrigger className="w-[140px] border-none bg-transparent h-7 text-[10px] font-black uppercase tracking-tight">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -121,20 +107,18 @@ export const StudioHeader: React.FC = () => {
                     </Select>
                 </div>
 
-                <div className={`hidden lg:flex items-center gap-1.5 text-[9px] font-black uppercase px-2 py-1 rounded-md border ${
+                <div className={`hidden lg:flex items-center gap-1.5 text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${
                     modelStatus === ModelStatus.READY ? 'text-green-600 bg-green-500/5 border-green-500/20' :
                     modelStatus === ModelStatus.LOADING ? 'text-amber-600 bg-amber-500/5 border-amber-500/20 animate-pulse' :
                     'text-muted-foreground bg-secondary/50 border-border'
                 }`}>
                     <Activity className="w-3 h-3" />
-                    {modelStatus === ModelStatus.LOADING ? `${progressPhase} ${progressPercent}%` : modelStatus}
+                    {modelStatus === ModelStatus.LOADING ? `${progressPercent}%` : modelStatus}
                 </div>
-
-                <div className="h-6 w-[1px] bg-border mx-1" />
 
                 <SettingsMenu />
                 
-                <Button variant="ghost" size="icon" onClick={() => logger.exportLogs()}>
+                <Button variant="ghost" size="icon" onClick={() => logger.exportLogs()} className="rounded-full">
                     <Terminal className="w-4 h-4" />
                 </Button>
 
@@ -144,7 +128,7 @@ export const StudioHeader: React.FC = () => {
                         size="sm" 
                         onClick={() => ProjectRepository.exportProjectAudio(parseInt(projectId))}
                         disabled={isExporting}
-                        className="font-black tracking-widest text-[10px] h-8"
+                        className="font-black tracking-[0.2em] text-[10px] h-8 px-4 rounded-full"
                     >
                         {isExporting ? <Loader2 className="w-3 h-3 animate-spin mr-2" /> : <Download className="w-3 h-3 mr-2" />}
                         EXPORT
