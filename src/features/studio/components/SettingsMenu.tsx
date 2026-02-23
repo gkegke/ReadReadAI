@@ -8,14 +8,27 @@ import {
 } from '../../../shared/components/ui/dialog';
 import { Button } from '../../../shared/components/ui/button';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { Settings, Eye, Type, AlignLeft, Info } from 'lucide-react';
+import { Settings, Eye, Type, AlignLeft, Info, Trash2 } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
+import { useProjectStore } from '../../../shared/store/useProjectStore';
+import { ProjectRepository } from '../../library/api/ProjectRepository';
 
 /**
- * SettingsMenu (Epic 3)
- * Centralized control for Studio ergonomics and UX preferences.
+ * SettingsMenu (Epic 3 & Phase 2)
+ * Centralized control for Studio ergonomics and UX preferences + Danger Zone functions.
  */
 export const SettingsMenu: React.FC = () => {
     const { isZenMode, setIsZenMode } = useSystemStore();
+    const { activeProjectId } = useProjectStore();
+    const navigate = useNavigate();
+
+    const handleDeleteProject = async () => {
+        if (!activeProjectId) return;
+        if (window.confirm("Are you sure you want to permanently delete this project? This action cannot be undone.")) {
+            await ProjectRepository.deleteProject(activeProjectId);
+            navigate({ to: '/' });
+        }
+    };
 
     return (
         <Dialog>
@@ -76,6 +89,24 @@ export const SettingsMenu: React.FC = () => {
                             Preferences are saved locally to your browser profile. They do not sync across devices.
                         </p>
                     </div>
+
+                    {/* [UX-PHASE-2] Danger Zone */}
+                    <div className="h-[1px] bg-border" />
+                    
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                            <span className="text-sm font-bold uppercase tracking-tight text-destructive">Danger Zone</span>
+                        </div>
+                        <Button 
+                            variant="destructive" 
+                            className="w-full text-xs font-bold tracking-widest uppercase" 
+                            onClick={handleDeleteProject}
+                        >
+                            Delete Project
+                        </Button>
+                    </div>
+
                 </div>
             </DialogContent>
         </Dialog>

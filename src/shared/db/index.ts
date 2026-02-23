@@ -10,9 +10,13 @@ export interface AudioCacheRecord {
   lastAccessedAt: Date;
 }
 
+/**
+ * ReadReadDB (V2.1)
+ * [CRITICAL: SCHEMA] Added projectId index to jobs table to support cascade deletions.
+ */
 class ReadReadDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
-  chapters!: EntityTable<Chapter, 'id'>; // [NEW]
+  chapters!: EntityTable<Chapter, 'id'>;
   chunks!: EntityTable<Chunk, 'id'>;
   audioCache!: EntityTable<AudioCacheRecord, 'hash'>;
   jobs!: EntityTable<Job, 'id'>;
@@ -21,14 +25,14 @@ class ReadReadDB extends Dexie {
   constructor() {
     super('ReadReadAI_DB');
     
-    // [BUMP] Version 2: Added Chapters and related indexing for hierarchy
+    // [BUMP] Version 2: Supporting hierarchical navigation and job indexing
     this.version(1).stores({
         projects: '++id, name, createdAt',
         chapters: '++id, projectId, [projectId+orderInProject]',
-        // [INDEX] Added chapterId and composite index for scoped timeline rendering
         chunks: '++id, projectId, chapterId, [projectId+orderInProject], [chapterId+orderInProject]',
         audioCache: 'hash, lastAccessedAt', 
-        jobs: '++id, chunkId, status, priority, [status+priority]',
+        // [FIX] Added projectId to the index string below
+        jobs: '++id, chunkId, projectId, status, priority, [status+priority]',
         logs: '++id, timestamp, severity, component'
     });
  }

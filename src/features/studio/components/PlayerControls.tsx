@@ -43,16 +43,17 @@ export const PlayerControls: React.FC = () => {
               </span>
           </div>
           
+          {/* [UX-PHASE-2] Native Tooltips appended for Discoverability */}
           <div className="flex items-center gap-6">
-             <button onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
-             <button onClick={togglePlay} disabled={!activeChunkId} className={cn("w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background")}>
+             <button title="Previous Block (K)" onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
+             <button title="Play / Pause (Spacebar)" onClick={togglePlay} disabled={!activeChunkId} className={cn("w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background")}>
                  {isPlaying ? <Pause className="w-7 h-7" fill="currentColor" /> : <Play className="w-7 h-7 ml-1" fill="currentColor" />}
              </button>
-             <button onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
+             <button title="Next Block (J)" onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
           </div>
 
           <div className="flex items-center justify-end min-w-[140px]">
-              <button onClick={toggleSpeed} className="text-[10px] font-black tracking-widest bg-primary/5 hover:bg-primary/10 px-4 py-1.5 rounded-full transition-colors">{playbackSpeed}X</button>
+              <button title="Playback Speed" onClick={toggleSpeed} className="text-[10px] font-black tracking-widest bg-primary/5 hover:bg-primary/10 px-4 py-1.5 rounded-full transition-colors">{playbackSpeed}X</button>
           </div>
       </div>
 

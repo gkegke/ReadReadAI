@@ -18,9 +18,9 @@ interface ChunkItemProps {
 }
 
 /**
- * ChunkItem (V3.0 - The Invisible Editor)
+ * ChunkItem (V3.1 - Progressive Disclosure)
  * [CRITICAL: 10/10] Minimalist aesthetic that emphasizes content over UI.
- * Controls are revealed only on hover to prevent visual exhaustion.
+ * Controls are faintly visible at all times to improve discoverability on touch devices.
  */
 export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
   const { playbackState, isPlaying: isGlobalPlaying } = useAudioStore();
@@ -88,7 +88,6 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
             isDragging && "opacity-50 scale-[1.05] shadow-2xl bg-primary/10"
         )}
     >
-      {/* Refined drag handle positioning */}
       <button 
         {...attributes} 
         {...listeners}
@@ -124,10 +123,10 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
             )}
       </div> 
         
-      {/* [HOVER REVEAL] Footer Metadata & Controls */}
+      {/* [UX-PHASE-2] Progressive Disclosure Footer Controls */}
       <div className={cn(
           "h-12 mt-4 flex items-center gap-6 transition-all duration-500 ease-in-out",
-          isActive ? "opacity-100 translate-y-0" : "opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0"
+          isActive ? "opacity-100" : "opacity-30 group-hover:opacity-100"
       )}>
             <div className="flex-1">
                 {chunk.status === 'processing' || isSaving ? (
