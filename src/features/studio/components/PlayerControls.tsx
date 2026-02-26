@@ -33,23 +33,22 @@ export const PlayerControls: React.FC = () => {
   };
 
   return (
-    // [STORY: GLASSMORPHISM] Integrated glass-panel component class
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl glass-panel rounded-3xl p-4 shadow-2xl border border-white/10 z-50">
       <div className="flex items-center justify-between mb-4 px-2">
           <div className="flex flex-col min-w-[140px]">
               <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">Timeline</span>
               <span className="text-xs font-bold truncate opacity-80">
-                  {activeChunkId ? `Block ${currentChunkIndex + 1} of ${chunkIds.length}` : 'Select a block'}
+                  {/* [EPIC 5] Label Standardization */}
+                  {activeChunkId ? `Chunk ${currentChunkIndex + 1} of ${chunkIds.length}` : 'Select a chunk'}
               </span>
           </div>
           
-          {/* [UX-PHASE-2] Native Tooltips appended for Discoverability */}
           <div className="flex items-center gap-6">
-             <button title="Previous Block (K)" onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
+             <button title="Previous Chunk (K)" onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
              <button title="Play / Pause (Spacebar)" onClick={togglePlay} disabled={!activeChunkId} className={cn("w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background")}>
                  {isPlaying ? <Pause className="w-7 h-7" fill="currentColor" /> : <Play className="w-7 h-7 ml-1" fill="currentColor" />}
              </button>
-             <button title="Next Block (J)" onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
+             <button title="Next Chunk (J)" onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
           </div>
 
           <div className="flex items-center justify-end min-w-[140px]">

@@ -25,9 +25,14 @@ export abstract class BaseRepository<T extends { id?: number }, S extends z.ZodT
         return await this.table.put(validated as T);
     }
 
+    /**
+     * [FIX: CRITICAL] Added { allKeys: true } to Dexie bulkAdd.
+     * Without this, bulkAdd returns only the LAST id inserted, 
+     * causing .map() failures in callers.
+     */
     async bulkAdd(data: Omit<T, 'id'>[]): Promise<number[]> {
         const validated = data.map(item => this.validate(item));
-        return await this.table.bulkAdd(validated as T[]) as number[];
+        return await this.table.bulkAdd(validated as T[], { allKeys: true }) as number[];
     }
 
     async update(id: number, data: Partial<T>): Promise<void> {

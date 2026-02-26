@@ -9,10 +9,11 @@ import { AlertTriangle } from 'lucide-react'
 import { BootScreen } from '../shared/components/ui/BootScreen'
 
 /**
- * App (V2.3 - Global Orchestrator)
+ * App (V2.4 - Global Orchestrator)
  */
 const App: React.FC = () => {
-  const { tts, g2p, storage, logger } = useServices();
+  // [EPIC 1] Extracted queue from DI context to manually initialize it safely
+  const { tts, g2p, storage, logger, queue } = useServices();
   const { modelStatus, errorMessage } = useTTSStore();
   const { storageMode, activeModelId } = useSystemStore();
   const hasBooted = useRef(false);
@@ -27,13 +28,17 @@ const App: React.FC = () => {
             await storage.init();
             await g2p.init(); 
             if (modelStatus === ModelStatus.UNLOADED) await tts.loadModel(activeModelId);
+            
+            // [EPIC 1] Predictable orchestration startup
+            await queue.init(); 
+
             await DemoService.checkAndCreateDemoProject();
         } catch (err) {
             logger.error('App', 'Critical Boot Failure', err);
         }
     };
     boot();
-  }, [tts, g2p, storage, logger, activeModelId, modelStatus]);
+  }, [tts, g2p, storage, logger, queue, activeModelId, modelStatus]);
 
   return (
     <>

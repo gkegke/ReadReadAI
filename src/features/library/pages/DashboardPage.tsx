@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useProjects } from '../../../shared/hooks/useQueries';
-import { FileText, Clock, LayoutGrid, Zap, UploadCloud, ShieldCheck, Disc, Trash2 } from 'lucide-react';
+import { FileText, Clock, LayoutGrid, Zap, UploadCloud, ShieldCheck, Disc, Trash2, Plus } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { ProjectRepository } from '../api/ProjectRepository';
 import { Button } from '../../../shared/components/ui/button';
@@ -20,7 +20,7 @@ export const DashboardPage: React.FC = () => {
     };
 
     /**
-     * [UX-PHASE-1] Frictionless Ingestion Drag and Drop Handlers
+     * [UX-PHASE-1] Frictionless Ingestion Handlers
      */
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
@@ -40,23 +40,35 @@ export const DashboardPage: React.FC = () => {
         e.preventDefault();
     };
 
+    // Unified import routine to prevent Zustand race conditions
+    const processFileImport = async (file: File) => {
+        try {
+            const projectName = file.name.replace(/\.[^/.]+$/, "") || "Imported Document";
+            const id = await ProjectRepository.createProject(projectName);
+            useProjectStore.getState().setActiveProject(id);
+            // Explicitly pass ID to guarantee it assigns to the freshly minted project
+            await ProjectRepository.importDocument(file, id);
+            navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
+        } catch (err) {
+            console.error("Failed to import file", err);
+            alert("Failed to import document.");
+        }
+    };
+
     const handleDrop = async (e: React.DragEvent) => {
         e.preventDefault();
         setDragCounter(0);
         setIsDragging(false);
         const file = e.dataTransfer.files?.[0];
         if (!file) return;
+        await processFileImport(file);
+    };
 
-        try {
-            const projectName = file.name.replace(/\.[^/.]+$/, "") || "Imported Document";
-            const id = await ProjectRepository.createProject(projectName);
-            useProjectStore.getState().setActiveProject(id);
-            await ProjectRepository.importDocument(file);
-            navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
-        } catch (err) {
-            console.error("Failed to import dropped file", err);
-            alert("Failed to import document.");
-        }
+    const handleFileInput = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        await processFileImport(file);
+        e.target.value = ''; // Reset input to allow re-selection
     };
 
     // [UX-PHASE-2] Global Deletion Flow
@@ -130,9 +142,10 @@ export const DashboardPage: React.FC = () => {
                             Absolute Privacy. Audio is synthesized directly on your device using WebAssembly.
                         </p>
                         <div className="flex flex-col items-center gap-4">
-                            <div className="text-muted-foreground/60 font-mono text-sm bg-background px-4 py-2 rounded-lg border border-border shadow-sm">
+                            <label className="text-muted-foreground/60 font-mono text-sm bg-background px-4 py-2 rounded-lg border border-border shadow-sm hover:border-primary/50 hover:text-primary cursor-pointer transition-colors">
+                                <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={handleFileInput} />
                                 Drag & Drop a PDF or text file anywhere to begin
-                            </div>
+                            </label>
                             <div className="flex items-center gap-4 opacity-50 mt-2">
                                 <span className="h-px w-12 bg-border"></span>
                                 <span className="text-[10px] font-black uppercase tracking-widest">or</span>
@@ -180,6 +193,16 @@ export const DashboardPage: React.FC = () => {
                                 </div>
                             </Link>
                         ))}
+
+                        {/* [UX] Persistent Import Affordance */}
+                        <label className="group p-6 rounded-2xl border-2 border-dashed border-border bg-transparent hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center cursor-pointer min-h-[200px]">
+                            <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={handleFileInput} />
+                            <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                                <Plus className="w-6 h-6 text-primary" strokeWidth={3} />
+                            </div>
+                            <h3 className="font-bold text-lg mb-1 group-hover:text-primary transition-colors">New from File</h3>
+                            <p className="text-[10px] text-muted-foreground uppercase tracking-widest text-center">Drop PDF or TXT here</p>
+                        </label>
                     </div>
                 )}
             </div>

@@ -3,14 +3,13 @@ import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useProjectChunkIds } from '../../../shared/hooks/useQueries';
 import { useServices } from '../../../shared/context/ServiceContext';
-import { logger } from '../../../shared/services/Logger';
 
 /**
- * useKeyboardShortcuts (Epic 4: Story 2)
- * Handles "Home Row" navigation and playback control.
- * J/K: Navigate | Space: Play/Pause | Cmd+K: Commands
+ * useKeyboardShortcuts
+ * [REFACTOR] Removed Power User Cmd+K. 
+ * Focused purely on playback ergonomics (Space, J, K).
  */
-export const useKeyboardShortcuts = (onOpenCommandPalette: () => void) => {
+export const useKeyboardShortcuts = () => {
     const { activeProjectId } = useProjectStore();
     const { activeChunkId, setActiveChunkId } = useAudioStore();
     const { playback } = useServices();
@@ -18,17 +17,14 @@ export const useKeyboardShortcuts = (onOpenCommandPalette: () => void) => {
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
-            // Ignore if user is typing in an input or textarea
-            const isInput = ['INPUT', 'TEXTAREA'].includes((e.target as HTMLElement).tagName);
+            // Ignore if user is typing in an input, textarea, or contentEditable
+            const target = e.target as HTMLElement;
+            const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
+            
             if (isInput && e.key !== 'Escape') return;
 
-            // Command Palette (Cmd/Ctrl + K)
-            if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-                e.preventDefault();
-                onOpenCommandPalette();
-                return;
-            }
-
+            // [DELETED] Command Palette Trigger
+            
             if (!chunkIds || chunkIds.length === 0) return;
 
             const currentIndex = activeChunkId ? chunkIds.indexOf(activeChunkId) : -1;
@@ -47,18 +43,11 @@ export const useKeyboardShortcuts = (onOpenCommandPalette: () => void) => {
                     break;
 
                 case ' ': // Toggle Play/Pause
-                    // Prevent page scroll
                     e.preventDefault();
                     if (activeChunkId) {
                         playback.toggle();
                     } else if (chunkIds.length > 0) {
                         setActiveChunkId(chunkIds[0]);
-                    }
-                    break;
-
-                case 'enter': // Forced focus if Shift is held
-                    if (e.shiftKey && activeChunkId) {
-                        playback.toggle();
                     }
                     break;
 
@@ -71,5 +60,5 @@ export const useKeyboardShortcuts = (onOpenCommandPalette: () => void) => {
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [chunkIds, activeChunkId, setActiveChunkId, playback, onOpenCommandPalette]);
+    }, [chunkIds, activeChunkId, setActiveChunkId, playback]);
 };

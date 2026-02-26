@@ -9,14 +9,12 @@ import {
     Trash2, 
     ChevronRight, 
     LayoutList,
-    MoreVertical
 } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
-import { Button } from '../../../shared/components/ui/button';
 
 /**
- * ChapterOutline (Epic 2: Story 1)
- * A right-side navigation rail that manages the internal structure of a project.
+ * ChapterOutline (Epic 4: Standardization)
+ * Unified UI taxonomy pointing exclusively to "Chapters".
  */
 export const ChapterOutline: React.FC = () => {
     const { activeProjectId, activeChapterId, setActiveChapter } = useProjectStore();
@@ -35,7 +33,7 @@ export const ChapterOutline: React.FC = () => {
     };
 
     const handleDelete = async (id: number) => {
-        if (confirm('Delete this section and all its contents?')) {
+        if (confirm('Delete this chapter and all its contents?')) {
             await ChapterRepository.deleteChapter(id);
             if (activeChapterId === id) setActiveChapter(null);
         }
@@ -46,7 +44,7 @@ export const ChapterOutline: React.FC = () => {
             <div className="p-4 border-b border-border flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <LayoutList className="w-4 h-4 text-muted-foreground" />
-                    <span className="text-[11px] font-black uppercase tracking-widest">Outline</span>
+                    <span className="text-[11px] font-black uppercase tracking-widest">Chapters</span>
                 </div>
                 <button 
                     onClick={() => setIsCreating(true)}
@@ -81,7 +79,7 @@ export const ChapterOutline: React.FC = () => {
                                 autoFocus
                                 value={newName}
                                 onChange={e => setNewName(e.target.value)}
-                                placeholder="Section name..."
+                                placeholder="Chapter name..."
                                 className="w-full bg-secondary/50 border border-primary/30 rounded-md px-2 py-1.5 text-xs outline-none"
                                 onBlur={() => !newName && setIsCreating(false)}
                             />
@@ -122,7 +120,7 @@ export const ChapterOutline: React.FC = () => {
 
             <div className="p-4 bg-secondary/10 border-t border-border">
                 <div className="text-[9px] font-mono text-muted-foreground uppercase text-center tracking-tighter">
-                    {chapters.length} Sections Defined
+                    {chapters.length} Chapters Defined
                 </div>
             </div>
         </aside>

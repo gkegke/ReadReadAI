@@ -1,54 +1,45 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { PlayCircle, PauseCircle, GripVertical, Settings2 } from 'lucide-react';
+import { PlayCircle, PauseCircle, Settings2, Loader2, ArrowUp, ArrowDown, SplitSquareVertical } from 'lucide-react';
 import { useServices } from '../../../shared/context/ServiceContext';
 import { WaveformPlayer } from './WaveformPlayer';
 import { WaveformCanvas } from './WaveformCanvas';
 import { PlaybackState } from '../services/AudioPlaybackService';
-import { useUpdateChunkTextMutation } from '../../../shared/hooks/useMutations';
+import { useUpdateChunkTextMutation, useGenerateAudioMutation, useSplitChunkMutation } from '../../../shared/hooks/useMutations';
+import { ChunkRepository } from '../api/ChunkRepository';
 import { cn } from '../../../shared/lib/utils';
+import { logger } from '../../../shared/services/Logger';
 import type { Chunk } from '../../../shared/types/schema';
 
 interface ChunkItemProps {
   chunk: Chunk;
   isActive: boolean;
+  index: number;
+  totalChunks: number;
+  onMoveUp: (index: number) => void;
+  onMoveDown: (index: number) => void;
 }
 
-/**
- * ChunkItem (V3.1 - Progressive Disclosure)
- * [CRITICAL: 10/10] Minimalist aesthetic that emphasizes content over UI.
- * Controls are faintly visible at all times to improve discoverability on touch devices.
- */
-export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
-  const { playbackState, isPlaying: isGlobalPlaying } = useAudioStore();
+export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, onMoveDown }: ChunkItemProps) => {
+  const { playbackState, setActiveChunkId } = useAudioStore();
   const { isZenMode } = useSystemStore();
   const { playback, storage } = useServices();
-  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging
-  } = useSortable({ id: chunk.id! });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    zIndex: isDragging ? 100 : 1,
-  };
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [isJitGenerating, setIsJitGenerating] = useState(false);
+  
+  const { mutateAsync: generateAudio } = useGenerateAudioMutation();
+  const { mutate: splitChunk } = useSplitChunkMutation();
+  
+  const isGlobalPlaying = playbackState === PlaybackState.PLAYING;
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(chunk.textContent);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { mutate: updateText, isPending: isSaving } = useUpdateChunkTextMutation();
 
-  const isPlaying = isActive && playbackState === PlaybackState.PLAYING;
+  const isPlaying = isActive && isGlobalPlaying;
   const isDimmed = isZenMode && isGlobalPlaying && !isActive;
 
   useEffect(() => {
@@ -56,6 +47,8 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
       if (isActive && chunk.status === 'generated' && chunk.generatedFilePath) {
           storage.readFile(chunk.generatedFilePath).then(blob => {
               if (isMounted) setAudioBlob(blob);
+          }).catch(e => {
+              logger.warn('ChunkItem', 'Failed to auto-buffer active chunk audio', e);
           });
       }
       return () => { isMounted = false; };
@@ -68,33 +61,78 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
       setIsEditing(false);
   };
 
+  const handleSplit = () => {
+      let cursor = Math.floor(chunk.textContent.length / 2);
+      if (isEditing && textareaRef.current) {
+          cursor = textareaRef.current.selectionStart;
+      }
+      splitChunk({ id: chunk.id!, cursor });
+      setIsEditing(false);
+  };
+
   const handlePlay = async () => {
       if (isActive) {
           playback.toggle();
-      } else {
-          const blob = audioBlob || await storage.readFile(chunk.generatedFilePath!);
+          return;
+      }
+
+      setActiveChunkId(chunk.id!);
+
+      const attemptPlayback = async (filePath: string) => {
+          const blob = audioBlob || await storage.readFile(filePath);
           playback.playChunk(chunk.id!, blob);
+      };
+
+      if (chunk.status !== 'generated' || !chunk.generatedFilePath) {
+          try {
+              setIsJitGenerating(true);
+              logger.info('ChunkItem', `JIT Generation forced for chunk ${chunk.id}`);
+              await generateAudio(chunk.id!);
+              
+              const freshChunk = await ChunkRepository.get(chunk.id!);
+              if (freshChunk?.generatedFilePath) {
+                  await attemptPlayback(freshChunk.generatedFilePath);
+              }
+          } catch (err) {
+              logger.error('ChunkItem', 'JIT Playback failed', err);
+          } finally {
+              setIsJitGenerating(false);
+          }
+      } else {
+          try {
+              await attemptPlayback(chunk.generatedFilePath);
+          } catch(e) {
+              logger.warn('ChunkItem', 'File physically missing from storage, forcing re-generation');
+              setIsJitGenerating(true);
+              try {
+                  await generateAudio(chunk.id!);
+                  const freshChunk = await ChunkRepository.get(chunk.id!);
+                  if (freshChunk?.generatedFilePath) await attemptPlayback(freshChunk.generatedFilePath);
+              } catch (regenErr) {
+                  logger.error('ChunkItem', 'Healing regeneration failed', regenErr);
+              } finally {
+                  setIsJitGenerating(false);
+              }
+          }
       }
   };
 
   return (
     <div 
-        ref={setNodeRef}
-        style={style}
         className={cn(
             "group relative pl-20 pr-12 py-10 transition-all duration-700 ease-out rounded-[2rem]",
             isActive ? "bg-primary/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] scale-[1.01]" : "hover:bg-secondary/5",
-            isDimmed && "opacity-10 blur-[3px] grayscale pointer-events-none scale-[0.98]",
-            isDragging && "opacity-50 scale-[1.05] shadow-2xl bg-primary/10"
+            isDimmed && "opacity-10 blur-[3px] grayscale pointer-events-none scale-[0.98]"
         )}
     >
-      <button 
-        {...attributes} 
-        {...listeners}
-        className="absolute left-8 top-12 p-2 opacity-0 group-hover:opacity-20 hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-primary"
-      >
-        <GripVertical className="w-5 h-5" />
-      </button>
+      {/* [EPIC 2] Deterministic Jupyter Controls */}
+      <div className="absolute left-4 top-10 flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground w-12">
+          <button onClick={() => onMoveUp(index)} disabled={index === 0} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowUp className="w-4 h-4" /></button>
+          <div className="text-[10px] font-mono font-bold select-none px-1 py-1">#{index + 1}</div>
+          <button onClick={() => onMoveDown(index)} disabled={index === totalChunks - 1} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowDown className="w-4 h-4" /></button>
+          <div className="w-4 h-px bg-border my-1" />
+          <button onClick={handleSplit} title="Split Block" className="p-1 hover:text-primary transition-colors"><SplitSquareVertical className="w-4 h-4" /></button>
+      </div>
 
       <div className="relative">
             {isEditing ? (
@@ -123,13 +161,12 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
             )}
       </div> 
         
-      {/* [UX-PHASE-2] Progressive Disclosure Footer Controls */}
       <div className={cn(
           "h-12 mt-4 flex items-center gap-6 transition-all duration-500 ease-in-out",
           isActive ? "opacity-100" : "opacity-30 group-hover:opacity-100"
       )}>
             <div className="flex-1">
-                {chunk.status === 'processing' || isSaving ? (
+                {chunk.status === 'processing' || isSaving || isJitGenerating ? (
                     <div className="w-full h-[2px] bg-secondary/50 rounded-full overflow-hidden">
                         <div className="h-full bg-primary animate-shimmer w-full" />
                     </div>
@@ -149,15 +186,22 @@ export const ChunkItem = memo(({ chunk, isActive }: ChunkItemProps) => {
                     <Settings2 className="w-4 h-4 opacity-40 hover:opacity-100" />
                 </button>
                 <div className="h-4 w-[1px] bg-border/20" />
+                
                 <button 
                     onClick={handlePlay} 
-                    disabled={chunk.status !== 'generated'}
+                    disabled={isJitGenerating}
                     className={cn(
-                        "transition-all hover:scale-110 active:scale-95 disabled:opacity-10",
+                        "transition-all hover:scale-110 active:scale-95 disabled:opacity-50",
                         isPlaying ? "text-primary" : "text-muted-foreground hover:text-primary"
                     )}
                 >
-                    {isPlaying ? <PauseCircle className="w-9 h-9" /> : <PlayCircle className="w-9 h-9" />}
+                    {isJitGenerating ? (
+                        <Loader2 className="w-9 h-9 animate-spin" />
+                    ) : isPlaying ? (
+                        <PauseCircle className="w-9 h-9" />
+                    ) : (
+                        <PlayCircle className="w-9 h-9" />
+                    )}
                 </button>
             </div>
       </div>

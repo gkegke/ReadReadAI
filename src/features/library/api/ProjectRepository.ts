@@ -16,8 +16,17 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
 
     async createProject(name: string): Promise<number> {
         const now = new Date();
+        let finalName = name.trim() || 'Untitled Project';
+        
+        // [UX] Auto-increment suffix for duplicate project names (e.g. "Report (1)")
+        let counter = 1;
+        while (await db.projects.where('name').equals(finalName).count() > 0) {
+            finalName = `${name.trim() || 'Untitled Project'} (${counter})`;
+            counter++;
+        }
+
         return await this.add({
-            name, 
+            name: finalName, 
             createdAt: now, 
             updatedAt: now,
             voiceSettings: { voiceId: 'af_heart', speed: 1.0 }
@@ -36,44 +45,56 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         }
     }
 
-    async importDocument(file: File): Promise<void> {
-        const { activeProjectId } = useProjectStore.getState();
-        if (!activeProjectId) throw new Error("No active project");
+    /**
+     * [FIX] Accept targetProjectId to bypass Zustand race conditions during rapid drops
+     */
+    async importDocument(file: File, targetProjectId?: number): Promise<void> {
+        const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
+        if (!projectId) throw new Error("No active project");
         
-        const result = await importService.importFile(file, activeProjectId);
+        const result = await importService.importFile(file, projectId);
         
         await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs], async () => {
             // [EPIC 2] Clear existing hierarchy for this project if re-importing
-            await db.chapters.where('projectId').equals(activeProjectId).delete();
-            await db.chunks.where('projectId').equals(activeProjectId).delete();
-            await db.jobs.where('projectId').equals(activeProjectId).delete();
+            await db.chapters.where('projectId').equals(projectId).delete();
+            await db.chunks.where('projectId').equals(projectId).delete();
+            await db.jobs.where('projectId').equals(projectId).delete();
             
             // Create a default chapter for document imports
-            const chapterId = await ChapterRepository.createChapter(activeProjectId, file.name || "Imported Document");
+            const chapterId = await ChapterRepository.createChapter(projectId, file.name || "Imported Document");
 
-            const chunksWithChapter = result.chunks.map(c => ({ ...c, chapterId }));
+            // [FIX] Added missing cleanTextHash required by Zod strict validation
+            const chunksWithChapter = result.chunks.map((c, i) => ({ 
+                ...c, 
+                chapterId,
+                orderInProject: i,
+                cleanTextHash: hashText(c.textContent) 
+            }));
             const newIds = await ChunkRepository.bulkAdd(chunksWithChapter);
             
-            await this.update(activeProjectId, { 
+            await this.update(projectId, { 
                 sourceFileName: result.fileName, 
                 updatedAt: new Date() 
             });
             
-            await this.enqueueJobs(newIds, activeProjectId, 10);
+            await this.enqueueJobs(newIds, projectId, 10);
         });
     }
 
-    async importRawText(text: string): Promise<void> {
-        const { activeProjectId } = useProjectStore.getState();
-        if (!activeProjectId) return;
+    /**
+     * [FIX] Accept targetProjectId to bypass Zustand race conditions
+     */
+    async importRawText(text: string, targetProjectId?: number): Promise<void> {
+        const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
+        if (!projectId) return;
 
-        const result = await importService.importText(text, activeProjectId);
-        const count = await db.chunks.where('projectId').equals(activeProjectId).count();
+        const result = await importService.importText(text, projectId);
+        const count = await db.chunks.where('projectId').equals(projectId).count();
         
         await db.transaction('rw', [db.chapters, db.chunks, db.projects, db.jobs], async () => {
             // [EPIC 2] Create a logical section for the pasted text
             const chapterName = `Clip ${new Date().toLocaleTimeString()}`;
-            const chapterId = await ChapterRepository.createChapter(activeProjectId, chapterName);
+            const chapterId = await ChapterRepository.createChapter(projectId, chapterName);
 
             const chunksToAdd = result.chunks.map((c, i) => ({ 
                 ...c, 
@@ -82,8 +103,8 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
                 cleanTextHash: hashText(c.textContent)
             }));
             const newIds = await ChunkRepository.bulkAdd(chunksToAdd);
-            await this.enqueueJobs(newIds, activeProjectId, 10);
-            await this.update(activeProjectId, { updatedAt: new Date() });
+            await this.enqueueJobs(newIds, projectId, 10);
+            await this.update(projectId, { updatedAt: new Date() });
         });
     }
 

@@ -3,7 +3,13 @@ import { type AudioResult } from './types';
 import type { ModelConfig } from '../../../shared/types/tts';
 import { assetClient } from './utils';
 import { logger } from '../../../shared/services/Logger';
+import * as ort from 'onnxruntime-web';
 
+/**
+ * KittenEngine (V1.3 - Robust Tensor Orchestration)
+ * [FIX: EPIC 1] Dynamic tensor matching explicitly handles ONNX version
+ * differences without throwing "invalid input 'tokens'".
+ */
 export class KittenEngine extends BaseOnnxEngine {
     private vocab: Record<string, number> = {};
     private voices: any = null;
@@ -12,7 +18,6 @@ export class KittenEngine extends BaseOnnxEngine {
         await this.initSession('/tts-models/kitten-tts/model_quantized.onnx');
 
         try {
-            // [OPTIMIZATION] Use Ky directly for metadata to handle retries/JSON parsing
             const [tokenizerData, voicesData] = await Promise.all([
                 assetClient.get('/tts-models/kitten-tts/tokenizer.json').json<any>(),
                 assetClient.get('/tts-models/kitten-tts/voices.json').json<any>()
@@ -30,29 +35,67 @@ export class KittenEngine extends BaseOnnxEngine {
     async generate(text: string, config: ModelConfig): Promise<AudioResult> {
         this.checkSession();
         
+        if (!text || text.trim().length === 0) {
+            throw new Error("KittenEngine: Cannot generate audio for empty text.");
+        }
+
         const phonemes = await this.getPhonemes(text, 'en-us');
         const tokensWithBoundaries = `$${phonemes}$`;
         
-        // Safety: Use character 0 (usually <unk> or <pad>) for unknown phonemes
         const inputIds = tokensWithBoundaries.split('').map(char => this.vocab[char] ?? 0);
-        const tensorIds = this.createInt64Tensor(inputIds, [1, inputIds.length]);
         
-        const voiceId = config.voice in this.voices ? config.voice : 'expr-voice-2-m';
+        while (inputIds.length < 5) {
+            inputIds.push(this.vocab[' '] ?? 0);
+        }
+
+        const sequenceLength = inputIds.length;
+        
+        const tensorIds = this.createInt64Tensor(inputIds, [1, sequenceLength]);
+        const tensorLengths = this.createInt64Tensor([sequenceLength], [1]);
+        
+        const maskData = new Array(sequenceLength).fill(1);
+        const tensorMask = this.createInt64Tensor(maskData, [1, sequenceLength]);
+        
+        const voiceId = config.voice in this.voices ? config.voice : Object.keys(this.voices)[0];
         const speakerEmbedding = new Float32Array(this.voices[voiceId][0]);
         const tensorStyle = this.createFloat32Tensor(speakerEmbedding, [1, speakerEmbedding.length]);
         
         const tensorSpeed = this.createFloat32Tensor([config.speed || 1.0], [1]);
 
-        const results = await this.session!.run({
-            'input_ids': tensorIds,
-            'style': tensorStyle,
-            'speed': tensorSpeed
+        logger.debug('KittenEngine', 'Executing Inference Session', { 
+            seqLen: sequenceLength, 
+            voiceId 
         });
 
-        return {
-            audio: results.waveform.data as Float32Array,
-            sampleRate: 24000
-        };
+        // [EPIC 1] Guard against 'invalid input tokens' by only injecting recognized parameters
+        const feed: Record<string, ort.Tensor> = {};
+        const expectedInputs = this.session!.inputNames;
+
+        if (expectedInputs.includes('input_ids')) feed['input_ids'] = tensorIds;
+        else if (expectedInputs.includes('tokens')) feed['tokens'] = tensorIds;
+        else if (expectedInputs.includes('input')) feed['input'] = tensorIds;
+
+        if (expectedInputs.includes('input_lengths')) feed['input_lengths'] = tensorLengths;
+        if (expectedInputs.includes('attention_mask')) feed['attention_mask'] = tensorMask;
+        if (expectedInputs.includes('style')) feed['style'] = tensorStyle;
+        if (expectedInputs.includes('speed')) feed['speed'] = tensorSpeed;
+        if (expectedInputs.includes('scales')) feed['scales'] = this.createFloat32Tensor([0.667, config.speed || 1.0, 0.8], [3]);
+
+        try {
+            const results = await this.session!.run(feed);
+
+            return {
+                audio: results.waveform.data as Float32Array,
+                sampleRate: 24000
+            };
+        } catch (err: any) {
+            logger.error('KittenEngine', 'ORT Run Failed', { 
+                error: err.message,
+                inputIds,
+                vocabSize: Object.keys(this.vocab).length
+            });
+            throw err;
+        }
     }
 
     getVoices() {

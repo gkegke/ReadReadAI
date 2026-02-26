@@ -10,6 +10,8 @@ import { ProjectRepository } from '../../library/api/ProjectRepository';
 import { SettingsMenu } from './SettingsMenu';
 import { logger } from '../../../shared/services/Logger';
 import { projectRoute } from '../../../app/router';
+import { ProjectSearch } from './ProjectSearch'; // [NEW]
+import { VoiceSelector } from './VoiceSelector'; // [NEW]
 import { 
     Loader2, 
     Download, 
@@ -58,56 +60,69 @@ export const StudioHeader: React.FC = () => {
     };
 
     return (
-        // [STORY: GLASSMORPHISM] Integrated glass-header component class
-        <header className="glass-header h-14 flex items-center px-6 justify-between">
-            <div className="flex items-center gap-4">
+        <header className="glass-header h-14 flex items-center px-4 justify-between gap-4">
+            {/* LEFT: Navigation & Context */}
+            <div className="flex items-center gap-3 min-w-0">
                 <Button 
                     variant="ghost" 
                     size="icon" 
                     onClick={() => navigate({ to: '/' })}
-                    className="hover:bg-secondary rounded-full w-8 h-8"
+                    className="hover:bg-secondary rounded-full w-8 h-8 shrink-0"
                 >
                     <ChevronLeft className="w-5 h-5" />
                 </Button>
 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                     <input 
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         onBlur={handleTitleBlur}
-                        className="bg-transparent border-none font-bold text-sm p-0 focus:ring-0 w-auto min-w-[50px] max-w-[300px] truncate hover:bg-secondary/40 rounded-md px-2 py-1 transition-colors"
+                        className="bg-transparent border-none font-bold text-sm p-0 focus:ring-0 w-auto min-w-[50px] truncate hover:bg-secondary/40 rounded-md px-2 py-1 transition-colors"
                         placeholder="Untitled Project"
                     />
-                    {isSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40" />}
+                    {isSaving && <Loader2 className="w-3 h-3 animate-spin opacity-40 shrink-0" />}
 
                     {chapter && (
-                        <>
+                        <div className="hidden sm:flex items-center gap-1">
                             <span className="text-muted-foreground/30 font-light">/</span>
-                            <span className="text-[10px] font-black text-primary flex items-center gap-1 uppercase tracking-widest bg-primary/5 px-2.5 py-1 rounded-full border border-primary/10">
+                            <span className="text-[10px] font-black text-primary flex items-center gap-1 uppercase tracking-widest bg-primary/5 px-2.5 py-1 rounded-full border border-primary/10 whitespace-nowrap">
                                 <Hash className="w-3 h-3 opacity-50" />
                                 {chapter.name}
                             </span>
-                        </>
+                        </div>
                     )}
                 </div>
             </div>
 
-            <div className="flex items-center gap-3">
-                <div className="hidden md:flex items-center gap-1 bg-secondary/50 rounded-full px-3 h-8 border border-border/50">
-                    <Cpu className="w-3 h-3 text-muted-foreground" />
-                    <Select value={activeModelId} onValueChange={handleModelChange}>
-                        <SelectTrigger className="w-[140px] border-none bg-transparent h-7 text-[10px] font-black uppercase tracking-tight">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {AVAILABLE_MODELS.map(m => (
-                                <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+            {/* CENTER: Search & Navigation */}
+            <div className="flex-1 flex justify-center max-w-md">
+                <ProjectSearch />
+            </div>
+
+            {/* RIGHT: Tools & Status */}
+            <div className="flex items-center gap-2 shrink-0">
+                
+                {/* Voice & Model Config (Now visible to general users) */}
+                <div className="hidden lg:flex items-center gap-2 mr-2">
+                    <VoiceSelector />
+                    
+                    <div className="flex items-center gap-1 bg-secondary/50 rounded-md px-2 h-8 border border-border/50">
+                        <Cpu className="w-3 h-3 text-muted-foreground" />
+                        <Select value={activeModelId} onValueChange={handleModelChange}>
+                            <SelectTrigger className="w-[110px] border-none bg-transparent h-7 text-[10px] font-black uppercase tracking-tight focus:ring-0">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {AVAILABLE_MODELS.map(m => (
+                                    <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </div>
 
-                <div className={`hidden lg:flex items-center gap-1.5 text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${
+                {/* Status Indicator */}
+                <div className={`hidden xl:flex items-center gap-1.5 text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${
                     modelStatus === ModelStatus.READY ? 'text-green-600 bg-green-500/5 border-green-500/20' :
                     modelStatus === ModelStatus.LOADING ? 'text-amber-600 bg-amber-500/5 border-amber-500/20 animate-pulse' :
                     'text-muted-foreground bg-secondary/50 border-border'
@@ -116,11 +131,7 @@ export const StudioHeader: React.FC = () => {
                     {modelStatus === ModelStatus.LOADING ? `${progressPercent}%` : modelStatus}
                 </div>
 
-                <SettingsMenu />
-                
-                <Button variant="ghost" size="icon" onClick={() => logger.exportLogs()} className="rounded-full">
-                    <Terminal className="w-4 h-4" />
-                </Button>
+                <div className="h-4 w-[1px] bg-border mx-1" />
 
                 {projectId && (
                     <Button 
@@ -134,6 +145,8 @@ export const StudioHeader: React.FC = () => {
                         EXPORT
                     </Button>
                 )}
+
+                <SettingsMenu />
             </div>
         </header>
     );

@@ -7,7 +7,11 @@ import { StorageQuotaService } from '../../../shared/services/storage/StorageQuo
 export const AudioGenerationService = {
     async generate(chunkId: number): Promise<void> {
         const chunk = await db.chunks.get(chunkId);
-        if (!chunk || chunk.status === 'processing' || chunk.status === 'generated') return;
+        
+        // [EPIC 1] Removed lock `chunk.status === 'processing'`. 
+        // This allows user's manual JIT "Play" clicks to override stuck states
+        // and force the system to heal itself.
+        if (!chunk || chunk.status === 'generated') return;
 
         // [STABILITY] Check for space before attempting synthesis
         await StorageQuotaService.checkAndPurge();
@@ -57,6 +61,7 @@ export const AudioGenerationService = {
         } catch (error) {
             logger.error('AudioGen', `Failed synthesis for chunk ${chunkId}`, error);
             await db.chunks.update(chunkId, { status: 'failed_tts', updatedAt: new Date() });
+            throw error; // [EPIC 1] Throw so JIT callers know it failed
         }
     }
 };
