@@ -1,12 +1,19 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { PlayCircle, PauseCircle, Settings2, Loader2, ArrowUp, ArrowDown, SplitSquareVertical } from 'lucide-react';
+import { useProjectStore } from '../../../shared/store/useProjectStore';
+import { 
+    PlayCircle, PauseCircle, Settings2, Loader2, ArrowUp, ArrowDown, 
+    SplitSquareVertical, FoldVertical, CheckSquare, Square 
+} from 'lucide-react';
 import { useServices } from '../../../shared/context/ServiceContext';
-import { WaveformPlayer } from './WaveformPlayer';
-import { WaveformCanvas } from './WaveformCanvas';
 import { PlaybackState } from '../services/AudioPlaybackService';
-import { useUpdateChunkTextMutation, useGenerateAudioMutation, useSplitChunkMutation } from '../../../shared/hooks/useMutations';
+import { 
+    useUpdateChunkTextMutation, 
+    useGenerateAudioMutation, 
+    useSplitChunkMutation,
+    useMergeChunkMutation 
+} from '../../../shared/hooks/useMutations';
 import { ChunkRepository } from '../api/ChunkRepository';
 import { cn } from '../../../shared/lib/utils';
 import { logger } from '../../../shared/services/Logger';
@@ -21,8 +28,20 @@ interface ChunkItemProps {
   onMoveDown: (index: number) => void;
 }
 
+/**
+ * ChunkItem (V3.1 - Waveform Stripped)
+ * [CRITICAL: PERFORMANCE] Removed WaveformCanvas to eliminate WebAudio overhead 
+ * and fix Vite resolution errors.
+ */
 export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, onMoveDown }: ChunkItemProps) => {
   const { playbackState, setActiveChunkId } = useAudioStore();
+  const { selectedChunkIds, toggleChunkSelection } = useProjectStore();
+  
+  // Scoped subscription for the CSS playhead
+  const currentTime = useAudioStore(state => state.activeChunkId === chunk.id ? state.currentTime : 0);
+  const duration = useAudioStore(state => state.activeChunkId === chunk.id ? state.duration : 0);
+  const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
+
   const { isZenMode } = useSystemStore();
   const { playback, storage } = useServices();
   
@@ -31,8 +50,10 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
   
   const { mutateAsync: generateAudio } = useGenerateAudioMutation();
   const { mutate: splitChunk } = useSplitChunkMutation();
+  const { mutate: mergeChunk } = useMergeChunkMutation();
   
   const isGlobalPlaying = playbackState === PlaybackState.PLAYING;
+  const isSelected = selectedChunkIds.includes(chunk.id!);
 
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(chunk.textContent);
@@ -86,7 +107,6 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
       if (chunk.status !== 'generated' || !chunk.generatedFilePath) {
           try {
               setIsJitGenerating(true);
-              logger.info('ChunkItem', `JIT Generation forced for chunk ${chunk.id}`);
               await generateAudio(chunk.id!);
               
               const freshChunk = await ChunkRepository.get(chunk.id!);
@@ -102,7 +122,6 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
           try {
               await attemptPlayback(chunk.generatedFilePath);
           } catch(e) {
-              logger.warn('ChunkItem', 'File physically missing from storage, forcing re-generation');
               setIsJitGenerating(true);
               try {
                   await generateAudio(chunk.id!);
@@ -122,16 +141,24 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
         className={cn(
             "group relative pl-20 pr-12 py-10 transition-all duration-700 ease-out rounded-[2rem]",
             isActive ? "bg-primary/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] scale-[1.01]" : "hover:bg-secondary/5",
+            isSelected && "bg-primary/5 border border-primary/20",
             isDimmed && "opacity-10 blur-[3px] grayscale pointer-events-none scale-[0.98]"
         )}
     >
-      {/* [EPIC 2] Deterministic Jupyter Controls */}
-      <div className="absolute left-4 top-10 flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground w-12">
+      <button 
+          onClick={() => toggleChunkSelection(chunk.id!)} 
+          className="absolute left-6 top-5 opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+          {isSelected ? <CheckSquare className="w-5 h-5 text-primary"/> : <Square className="w-5 h-5 text-muted-foreground opacity-30 hover:opacity-100"/>}
+      </button>
+
+      <div className="absolute left-4 top-14 flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground w-12">
           <button onClick={() => onMoveUp(index)} disabled={index === 0} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowUp className="w-4 h-4" /></button>
           <div className="text-[10px] font-mono font-bold select-none px-1 py-1">#{index + 1}</div>
           <button onClick={() => onMoveDown(index)} disabled={index === totalChunks - 1} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowDown className="w-4 h-4" /></button>
           <div className="w-4 h-px bg-border my-1" />
           <button onClick={handleSplit} title="Split Block" className="p-1 hover:text-primary transition-colors"><SplitSquareVertical className="w-4 h-4" /></button>
+          <button onClick={() => mergeChunk(chunk.id!)} disabled={index === totalChunks - 1} title="Merge Down" className="p-1 hover:text-primary disabled:opacity-20 transition-colors mt-0.5"><FoldVertical className="w-4 h-4" /></button>
       </div>
 
       <div className="relative">
@@ -171,12 +198,19 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
                         <div className="h-full bg-primary animate-shimmer w-full" />
                     </div>
                 ) : isActive && audioBlob ? (
-                    <WaveformPlayer blob={audioBlob} isActive={isActive} chunkId={chunk.id!} />
-                ) : chunk.waveformPeaks ? (
-                    <div className="opacity-40 hover:opacity-100 transition-opacity">
-                        <WaveformCanvas peaks={chunk.waveformPeaks} height={24} color="currentColor" />
+                    /* [IMPORTANCE: 10/10] High-performance CSS playhead replaces Wavesurfer canvas */
+                    <div className="w-full h-8 mt-2 bg-secondary/10 rounded-lg overflow-hidden relative cursor-default border border-border/20">
+                        <div
+                            className="absolute top-0 left-0 h-full bg-primary/20 transition-all duration-100 ease-linear"
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                        <div
+                            className="absolute top-0 left-0 h-full border-r-[3px] border-primary transition-all duration-100 ease-linear shadow-[0_0_12px_rgba(var(--primary),0.6)]"
+                            style={{ width: `${progressPercent}%` }}
+                        />
                     </div>
                 ) : (
+                    /* Default state for inactive/non-generated chunks */
                     <div className="w-full h-[1px] bg-border/10" />
                 )}
             </div>

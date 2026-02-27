@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso';
 import { ChunkItem } from './ChunkItem';
 import { InsertionPoint } from './InsertionPoint';
+import { FloatingActionBar } from './FloatingActionBar'; 
 import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useProjectChunks } from '../../../shared/hooks/useQueries'; 
@@ -12,10 +13,6 @@ import { Loader2, FileText, FileUp, PlusSquare } from 'lucide-react';
 import { AppErrorBoundary } from '../../../shared/components/AppErrorBoundary';
 import { Button } from '../../../shared/components/ui/button';
 
-/**
- * Studio Timeline (Epic 2 & 3 Version)
- * Stripped of variable-height collision DnD kits in favor of deterministic controls.
- */
 export const Timeline: React.FC = () => {
   const { activeChunkId } = useAudioStore();
   const { activeProjectId, activeChapterId } = useProjectStore();
@@ -33,23 +30,22 @@ export const Timeline: React.FC = () => {
     }
   }, [activeChunkId, chunks]);
 
-  // [EPIC 2] Deterministic Reordering
   const handleMoveUp = async (index: number) => {
     if (index === 0) return;
-    const newOrder = [...chunks];
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[index - 1];
-    newOrder[index - 1] = temp;
-    await ChunkRepository.reorder(activeProjectId!, newOrder.map(c => c.id!));
+    const current = chunks[index];
+    const previous = chunks[index - 1];
+    
+    // [CRITICAL FIX] Target explicit swap to avoid collapsing absolute DB indices 
+    // when reordering chunks while inside a filtered Chapter view.
+    await ChunkRepository.swapChunks(current.id!, previous.id!);
   };
 
   const handleMoveDown = async (index: number) => {
     if (index === chunks.length - 1) return;
-    const newOrder = [...chunks];
-    const temp = newOrder[index];
-    newOrder[index] = newOrder[index + 1];
-    newOrder[index + 1] = temp;
-    await ChunkRepository.reorder(activeProjectId!, newOrder.map(c => c.id!));
+    const current = chunks[index];
+    const next = chunks[index + 1];
+    
+    await ChunkRepository.swapChunks(current.id!, next.id!);
   };
 
   if (isLoading) return (
@@ -59,7 +55,6 @@ export const Timeline: React.FC = () => {
       </div>
   );
 
-  // [EPIC 3] Explicit CTA Empty State
   if (!isLoading && chunks.length === 0) return (
       <div className="h-full flex flex-col items-center justify-center opacity-80 select-none text-center p-8 animate-in fade-in duration-700">
           <FileText className="w-12 h-12 mb-6 text-primary/50" />
@@ -79,18 +74,12 @@ export const Timeline: React.FC = () => {
                   <FileUp className="w-4 h-4 mr-2" /> Import PDF / TXT
               </label>
           </div>
-          <div className="mt-12 max-w-xl w-full">
-            <InsertionPoint 
-                projectId={activeProjectId!} 
-                chapterId={activeChapterId} 
-                afterOrderIndex={0} 
-            />
-          </div>
       </div>
   );
 
   return (
-    <div className="h-full w-full bg-background/30 selection:bg-primary/10">
+    <div className="h-full w-full bg-background/30 selection:bg-primary/10 relative">
+        <FloatingActionBar />
         <AppErrorBoundary name="TimelineList">
             <Virtuoso
                 ref={virtuosoRef}
@@ -99,7 +88,7 @@ export const Timeline: React.FC = () => {
                     <div className="max-w-4xl mx-auto w-full px-8 relative">
                         <InsertionPoint 
                             projectId={activeProjectId!} 
-                            chapterId={activeChapterId} 
+                            chapterId={chunk.chapterId} 
                             afterOrderIndex={index - 1} 
                         />
                         <ChunkItem 
@@ -110,11 +99,10 @@ export const Timeline: React.FC = () => {
                             onMoveUp={handleMoveUp}
                             onMoveDown={handleMoveDown}
                         />
-                        {/* Final Footer insertion point */}
                         {index === chunks.length - 1 && (
                              <InsertionPoint 
                                 projectId={activeProjectId!} 
-                                chapterId={activeChapterId} 
+                                chapterId={chunk.chapterId} 
                                 afterOrderIndex={index} 
                             />
                         )}

@@ -14,10 +14,6 @@ export const ProjectSchema = z.object({
   updatedAt: z.date(),
 });
 
-/**
- * [NEW] Chapter Schema
- * [CRITICAL: 10/10] Provides the mid-level hierarchy needed for long-form content.
- */
 export const ChapterSchema = z.object({
   id: z.number().optional(),
   projectId: z.number(),
@@ -31,7 +27,7 @@ export const ChunkStatusSchema = z.enum(['pending', 'processing', 'generated', '
 export const ChunkSchema = z.object({
   id: z.number().optional(),
   projectId: z.number(),
-  chapterId: z.number().optional(), // [RELATIONAL] Link to Chapter entity
+  chapterId: z.number(), // [CRITICAL: EPIC 2] Required. Enforces strict hierarchy.
   orderInProject: z.number(),
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),

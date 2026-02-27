@@ -1,10 +1,7 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { ProjectRepository } from '../../features/library/api/ProjectRepository';
 import { ChunkRepository } from '../../features/studio/api/ChunkRepository';
 
-/**
- * Hook to import a PDF/File into the active project.
- */
 export const useImportDocumentMutation = () => {
     return useMutation({
         mutationFn: (file: File) => ProjectRepository.importDocument(file),
@@ -12,24 +9,22 @@ export const useImportDocumentMutation = () => {
     });
 };
 
-/**
- * Hook to import raw text into the project as new chunks.
- */
 export const useImportTextMutation = () => {
-    const queryClient = useQueryClient();
     return useMutation({
         mutationFn: (text: string) => ProjectRepository.importRawText(text),
-        onSuccess: () => {
-            // Note: Data reactivity still primarily handled by useLiveQuery, 
-            // but we can trigger additional logic here if needed.
-        },
         onError: (err) => console.error('[Mutation] Import Text Failed', err),
     });
 };
 
-/**
- * Hook to update a chunk's content (triggers re-synthesis).
- */
+export const useInsertBlockMutation = () => {
+    return useMutation({
+        mutationFn: async ({ text, projectId, chapterId, afterOrderIndex }: { text: string, projectId: number, chapterId: number, afterOrderIndex: number }) => {
+             return ChunkRepository.insertBlock(text, projectId, chapterId, afterOrderIndex);
+        },
+        onError: (err) => console.error('[Mutation] Insert Block Failed', err),
+    });
+};
+
 export const useUpdateChunkTextMutation = () => {
     return useMutation({
         mutationFn: ({ id, text }: { id: number, text: string }) => 
@@ -37,18 +32,12 @@ export const useUpdateChunkTextMutation = () => {
     });
 };
 
-/**
- * Manually trigger audio generation for a specific chunk.
- */
 export const useGenerateAudioMutation = () => {
     return useMutation({
         mutationFn: (id: number) => ProjectRepository.generateChunkAudio(id),
     });
 };
 
-/**
- * Split a chunk into two at a specific character cursor.
- */
 export const useSplitChunkMutation = () => {
     return useMutation({
         mutationFn: async ({ id, cursor }: { id: number, cursor: number }) => {
@@ -58,3 +47,27 @@ export const useSplitChunkMutation = () => {
     });
 };
 
+// --- [EPIC 3: ERGONOMICS MUTATIONS] ---
+
+export const useMergeChunkMutation = () => {
+    return useMutation({
+        mutationFn: (id: number) => ChunkRepository.mergeWithNext(id),
+        onError: (err) => console.error('[Mutation] Merge Chunk Failed', err),
+    });
+};
+
+export const useDeleteChunksMutation = () => {
+    return useMutation({
+        mutationFn: ({ projectId, chunkIds }: { projectId: number, chunkIds: number[] }) => 
+            ChunkRepository.deleteChunks(projectId, chunkIds),
+        onError: (err) => console.error('[Mutation] Delete Chunks Failed', err),
+    });
+};
+
+export const useRegenerateChunksMutation = () => {
+    return useMutation({
+        mutationFn: ({ projectId, chunkIds }: { projectId: number, chunkIds: number[] }) => 
+            ChunkRepository.bulkRegenerate(projectId, chunkIds),
+        onError: (err) => console.error('[Mutation] Regenerate Chunks Failed', err),
+    });
+};

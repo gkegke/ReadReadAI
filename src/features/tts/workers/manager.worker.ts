@@ -5,11 +5,6 @@ import { AudioGenerationService } from '../services/AudioGenerationService';
 import { ttsService } from '../services/TTSService';
 import { logger } from '../../../shared/services/Logger';
 
-/**
- * ManagerWorker Logic (XState Edition)
- * [CRITICAL] deterministic state transitions prevent race conditions 
- * during rapid project switches or background interruptions.
- */
 const managerMachine = createMachine({
     id: 'jobManager',
     initial: 'idle',
@@ -55,7 +50,7 @@ const managerMachine = createMachine({
             }
         },
         sleeping: {
-            after: { 2000: 'checking' }, // Standard poll interval
+            after: { 2000: 'checking' }, 
             on: { POKE: 'checking' }
         },
         error_cooldown: {
@@ -83,13 +78,25 @@ const managerMachine = createMachine({
         },
         executeJob: async ({ event }) => {
             const job = event.output;
+            const startTime = Date.now();
+            const waitTime = startTime - job.createdAt.getTime();
+            
+            logger.debug('JobQueue', `Dequeued Job [${job.chunkId}]`, { waitTimeMs: waitTime });
+            
             await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
+            
             try {
                 await AudioGenerationService.generate(job.chunkId);
                 await db.jobs.delete(job.id!);
+                
+                const execTime = Date.now() - startTime;
+                logger.info('JobQueue', `Job [${job.chunkId}] Completed`, { 
+                    execTimeMs: execTime, 
+                    totalTimeMs: waitTime + execTime 
+                });
             } catch (e) {
-                // Error handling logic (retry increments) remains the same as previous impl
-                throw e;
+                logger.error('JobQueue', `Job [${job.chunkId}] Failed`, e);
+                throw e; 
             }
         }
     }

@@ -4,7 +4,7 @@ import { importService } from '../../../shared/services/ImportService';
 import { exportService } from '../../../shared/services/ExportService';
 import { ProjectSchema, type Project, type Chunk } from '../../../shared/types/schema';
 import { ChunkRepository } from '../../studio/api/ChunkRepository';
-import { ChapterRepository } from './ChapterRepository'; // [NEW]
+import { ChapterRepository } from './ChapterRepository';
 import { hashText } from '../../../shared/lib/text-processor';
 import { AudioGenerationService } from '../../tts/services/AudioGenerationService';
 import { BaseRepository as SharedBaseRepository } from '../../../shared/api/BaseRepository';
@@ -18,7 +18,6 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         const now = new Date();
         let finalName = name.trim() || 'Untitled Project';
         
-        // [UX] Auto-increment suffix for duplicate project names (e.g. "Report (1)")
         let counter = 1;
         while (await db.projects.where('name').equals(finalName).count() > 0) {
             finalName = `${name.trim() || 'Untitled Project'} (${counter})`;
@@ -46,7 +45,8 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
     }
 
     /**
-     * [FIX] Accept targetProjectId to bypass Zustand race conditions during rapid drops
+     * [EPIC 2] Non-Destructive Appends.
+     * Imports no longer wipe the project. They append as a new chapter.
      */
     async importDocument(file: File, targetProjectId?: number): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
@@ -55,19 +55,15 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         const result = await importService.importFile(file, projectId);
         
         await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs], async () => {
-            // [EPIC 2] Clear existing hierarchy for this project if re-importing
-            await db.chapters.where('projectId').equals(projectId).delete();
-            await db.chunks.where('projectId').equals(projectId).delete();
-            await db.jobs.where('projectId').equals(projectId).delete();
-            
-            // Create a default chapter for document imports
-            const chapterId = await ChapterRepository.createChapter(projectId, file.name || "Imported Document");
+            const chapterCount = await db.chapters.where('projectId').equals(projectId).count();
+            const chunkCount = await db.chunks.where('projectId').equals(projectId).count();
 
-            // [FIX] Added missing cleanTextHash required by Zod strict validation
+            const chapterId = await ChapterRepository.createChapter(projectId, file.name || `Imported Document ${chapterCount + 1}`);
+
             const chunksWithChapter = result.chunks.map((c, i) => ({ 
                 ...c, 
                 chapterId,
-                orderInProject: i,
+                orderInProject: chunkCount + i, // Append globally
                 cleanTextHash: hashText(c.textContent) 
             }));
             const newIds = await ChunkRepository.bulkAdd(chunksWithChapter);
@@ -82,23 +78,22 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
     }
 
     /**
-     * [FIX] Accept targetProjectId to bypass Zustand race conditions
+     * [EPIC 2] Non-Destructive Appends.
      */
     async importRawText(text: string, targetProjectId?: number): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
         if (!projectId) return;
 
         const result = await importService.importText(text, projectId);
-        const count = await db.chunks.where('projectId').equals(projectId).count();
         
         await db.transaction('rw', [db.chapters, db.chunks, db.projects, db.jobs], async () => {
-            // [EPIC 2] Create a logical section for the pasted text
+            const count = await db.chunks.where('projectId').equals(projectId).count();
             const chapterName = `Clip ${new Date().toLocaleTimeString()}`;
             const chapterId = await ChapterRepository.createChapter(projectId, chapterName);
 
             const chunksToAdd = result.chunks.map((c, i) => ({ 
                 ...c, 
-                chapterId, // [NEW] link to new section
+                chapterId, 
                 orderInProject: count + i,
                 cleanTextHash: hashText(c.textContent)
             }));

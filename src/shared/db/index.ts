@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from 'dexie';
+import { Dexie, type EntityTable } from 'dexie';
 import type { Project, Chunk, Job, LogEntry, Chapter } from '../types/schema';
 
 export interface AudioCacheRecord {
@@ -11,8 +11,9 @@ export interface AudioCacheRecord {
 }
 
 /**
- * ReadReadDB (V2.1)
- * [CRITICAL: SCHEMA] Added projectId index to jobs table to support cascade deletions.
+ * ReadReadDB (Stable Edition)
+ * [STABILITY: CRITICAL] Reverted to standard named import { Dexie }.
+ * This is the canonical way to extend the class in Vite 6 + Vitest 1.6+.
  */
 class ReadReadDB extends Dexie {
   projects!: EntityTable<Project, 'id'>;
@@ -25,15 +26,27 @@ class ReadReadDB extends Dexie {
   constructor() {
     super('ReadReadAI_DB');
     
-    // [BUMP] Version 2: Supporting hierarchical navigation and job indexing
     this.version(1).stores({
         projects: '++id, name, createdAt',
         chapters: '++id, projectId, [projectId+orderInProject]',
         chunks: '++id, projectId, chapterId, [projectId+orderInProject], [chapterId+orderInProject]',
         audioCache: 'hash, lastAccessedAt', 
-        // [FIX] Added projectId to the index string below
         jobs: '++id, chunkId, projectId, status, priority, [status+priority]',
         logs: '++id, timestamp, severity, component'
+    }).upgrade(async tx => {
+        const chunksWithoutChapter = await tx.table('chunks').filter(c => !c.chapterId).toArray();
+        if (chunksWithoutChapter.length > 0) {
+            const projectIds = [...new Set(chunksWithoutChapter.map(c => c.projectId))];
+            for (const pid of projectIds) {
+                const chapterId = await tx.table('chapters').add({
+                    projectId: pid,
+                    name: "Recovered Chapter",
+                    orderInProject: 0,
+                    createdAt: new Date()
+                });
+                await tx.table('chunks').where('projectId').equals(pid).modify({ chapterId });
+            }
+        }
     });
  }
 }

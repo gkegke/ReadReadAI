@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
 import { Plus, Send, X } from 'lucide-react';
 import { Button } from '../../../shared/components/ui/button';
-import { useImportTextMutation } from '../../../shared/hooks/useMutations';
+import { useInsertBlockMutation } from '../../../shared/hooks/useMutations';
 import { cn } from '../../../shared/lib/utils';
 
 interface InsertionPointProps {
     projectId: number;
-    chapterId: number | null;
-    afterOrderIndex: number; // Insert after this index
+    chapterId: number; // [EPIC 2] Strictly required now
+    afterOrderIndex: number; 
 }
 
 /**
- * InsertionPoint (Epic 3: Story 1)
- * A hover-triggered zone between blocks that allows for non-linear content addition.
+ * InsertionPoint (Epic 2)
+ * Refactored to splice perfectly inline without mangling existing chapters.
  */
 export const InsertionPoint: React.FC<InsertionPointProps> = ({ 
     projectId, 
@@ -21,13 +21,11 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({
 }) => {
     const [isActive, setIsActive] = useState(false);
     const [text, setText] = useState('');
-    const { mutate: importText, isPending } = useImportTextMutation();
+    const { mutate: insertBlock, isPending } = useInsertBlockMutation();
 
     const handleInsert = () => {
         if (!text.trim()) return;
-        // The ImportTextMutation handles the heavy lifting of chunking and indexing.
-        // For the V1 of Epic 3, we simply append or insert.
-        importText(text, {
+        insertBlock({ text, projectId, chapterId, afterOrderIndex }, {
             onSuccess: () => {
                 setText('');
                 setIsActive(false);

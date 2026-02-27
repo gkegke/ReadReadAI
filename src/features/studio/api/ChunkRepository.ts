@@ -8,6 +8,124 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         super(db.chunks, ChunkSchema);
     }
 
+    /**
+     * [IMPORTANCE: 9/10] Normalizes arrays to remove gaps left by merges or deletions.
+     * Guarantees `getNext` gapless playback calculation is never broken by sparse arrays.
+     */
+    private async normalizeProjectOrders(projectId: number): Promise<void> {
+        const chunks = await db.chunks.where('projectId').equals(projectId).sortBy('orderInProject');
+        const updates = [];
+        
+        for (let i = 0; i < chunks.length; i++) {
+            if (chunks[i].orderInProject !== i) {
+                updates.push(db.chunks.update(chunks[i].id!, { orderInProject: i }));
+            }
+        }
+        
+        if (updates.length > 0) {
+            await Promise.all(updates);
+        }
+    }
+
+    async deleteChunks(projectId: number, chunkIds: number[]): Promise<void> {
+        await db.transaction('rw', [db.chunks, db.jobs], async () => {
+            await db.chunks.bulkDelete(chunkIds);
+            await db.jobs.where('chunkId').anyOf(chunkIds).delete();
+            await this.normalizeProjectOrders(projectId);
+        });
+    }
+
+    async bulkRegenerate(projectId: number, chunkIds: number[]): Promise<void> {
+        await db.transaction('rw', [db.chunks, db.jobs], async () => {
+            const chunks = await db.chunks.where('id').anyOf(chunkIds).toArray();
+            const jobs = [];
+            
+            for (const chunk of chunks) {
+                await db.chunks.update(chunk.id!, { status: 'pending' });
+                jobs.push({ 
+                    chunkId: chunk.id!, 
+                    projectId, 
+                    status: 'pending' as const, 
+                    priority: 50, 
+                    createdAt: new Date() 
+                });
+            }
+            
+            await db.jobs.where('chunkId').anyOf(chunkIds).delete();
+            await db.jobs.bulkAdd(jobs);
+        });
+    }
+
+    async mergeWithNext(chunkId: number): Promise<void> {
+        const chunkA = await this.get(chunkId);
+        if (!chunkA) return;
+
+        const chunkB = await db.chunks
+            .where('[projectId+orderInProject]')
+            .equals([chunkA.projectId, chunkA.orderInProject + 1])
+            .first();
+
+        // Safety: Only merge if adjacent chunk exists and is in the same chapter
+        if (!chunkB || chunkB.chapterId !== chunkA.chapterId) return;
+
+        await db.transaction('rw', [db.chunks, db.jobs], async () => {
+            const newText = `${chunkA.textContent} ${chunkB.textContent}`.trim();
+            
+            await this.update(chunkA.id!, {
+                textContent: newText,
+                cleanTextHash: hashText(newText),
+                status: 'pending',
+                updatedAt: new Date()
+            });
+
+            await db.chunks.delete(chunkB.id!);
+            await db.jobs.where('chunkId').equals(chunkB.id!).delete();
+
+            await this.normalizeProjectOrders(chunkA.projectId);
+            await this.ensureJob(chunkA.id!, chunkA.projectId, 50);
+        });
+    }
+
+    async insertBlock(text: string, projectId: number, chapterId: number, afterOrderIndex: number): Promise<void> {
+        await db.transaction('rw', [db.chunks, db.jobs], async () => {
+            await db.chunks
+                .where('projectId').equals(projectId)
+                .filter(c => c.orderInProject > afterOrderIndex)
+                .modify(c => c.orderInProject += 1);
+
+            const newChunkId = await this.add({
+                projectId,
+                chapterId,
+                orderInProject: afterOrderIndex + 1,
+                textContent: text,
+                cleanTextHash: hashText(text),
+                status: 'pending',
+                createdAt: new Date(),
+                updatedAt: new Date()
+            });
+
+            await this.ensureJob(newChunkId, projectId, 50);
+        });
+    }
+
+    /**
+     * [CRITICAL: INTEGRITY FIX] Explicitly swaps two chunks to prevent absolute 
+     * project index corruption when reordering inside a filtered chapter view.
+     */
+    async swapChunks(chunkId1: number, chunkId2: number): Promise<void> {
+        await db.transaction('rw', [db.chunks], async () => {
+            const c1 = await this.get(chunkId1);
+            const c2 = await this.get(chunkId2);
+            if (!c1 || !c2) return;
+            
+            await this.update(chunkId1, { orderInProject: c2.orderInProject });
+            await this.update(chunkId2, { orderInProject: c1.orderInProject });
+        });
+    }
+
+    /**
+     * @deprecated Use `swapChunks` for UX operations. Mass-reordering subset arrays causes index collisions.
+     */
     async reorder(projectId: number, chunkIds: number[]): Promise<void> {
         await db.transaction('rw', [db.chunks], async () => {
             const updates = chunkIds.map((id, index) => 
@@ -32,10 +150,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         });
     }
 
-    /** 
-     * [CRITICAL] Implements "Block Splitting" behavior (Enter key logic).
-     * Splits one chunk into two and shifts all subsequent indices down.
-     */
     async splitChunk(chunkId: number, cursorIndex: number): Promise<void> {
         const chunk = await this.get(chunkId);
         if (!chunk || cursorIndex < 0 || cursorIndex >= chunk.textContent.length) return;
@@ -43,22 +157,19 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         const firstPart = chunk.textContent.slice(0, cursorIndex).trim();
         const secondPart = chunk.textContent.slice(cursorIndex).trim();
 
-        if (!firstPart || !secondPart) return; // Avoid creating empty ghost chunks
+        if (!firstPart || !secondPart) return;
 
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
-            // 1. Shift all subsequent chunks down by 1 to make room
             await db.chunks
                 .where('projectId').equals(chunk.projectId)
                 .filter(c => c.orderInProject > chunk.orderInProject)
                 .modify(c => c.orderInProject += 1);
 
-            // 2. Update the original chunk (Left side of split)
             await this.updateText(chunkId, firstPart);
 
-            // 3. Create the new chunk (Right side of split)
             const newChunkId = await this.add({
                 projectId: chunk.projectId,
-                chapterId: chunk.chapterId, // Inherit chapter context
+                chapterId: chunk.chapterId,
                 orderInProject: chunk.orderInProject + 1,
                 textContent: secondPart,
                 cleanTextHash: hashText(secondPart),
@@ -67,7 +178,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 updatedAt: new Date()
             });
 
-            // 4. Queue job for the new right-side chunk
             await this.ensureJob(newChunkId, chunk.projectId, 50);
         });
     }

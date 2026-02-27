@@ -14,8 +14,7 @@ export const DemoService = {
         const count = await db.projects.count();
         if (count > 0) return;
 
-        // Use a transaction for the whole sequence to ensure atomicity
-        await db.transaction('rw', [db.projects, db.chunks, db.jobs], async () => {
+        await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs], async () => {
             const projectId = await db.projects.add({
                 name: "Welcome to ReadReadAI",
                 createdAt: new Date(),
@@ -23,8 +22,17 @@ export const DemoService = {
                 voiceSettings: { voiceId: 'af_heart', speed: 1.0 }
             });
 
+            // [EPIC 2] Enforce strict hierarchy creation
+            const chapterId = await db.chapters.add({
+                projectId,
+                name: "Introduction",
+                orderInProject: 0,
+                createdAt: new Date()
+            });
+
             const chunkData = DEMO_CONTENT.map((text, index) => ({
                 projectId,
+                chapterId, // [EPIC 2] Bind to required chapter hierarchy
                 orderInProject: index,
                 textContent: text,
                 cleanTextHash: hashText(text),
@@ -33,10 +41,8 @@ export const DemoService = {
                 updatedAt: new Date()
             }));
 
-            // [FIX] Use the repository so we get the correctly typed ID array back
             const chunkIds = await ChunkRepository.bulkAdd(chunkData);
             
-            // [FIX] Map over the actual IDs returned from the DB, don't assume index + 1
             const jobs = chunkIds.map((id) => ({
                 chunkId: id,
                 projectId,
