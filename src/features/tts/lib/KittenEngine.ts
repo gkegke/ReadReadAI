@@ -42,8 +42,16 @@ export class KittenEngine extends BaseOnnxEngine {
         const phonemes = await this.getPhonemes(text, 'en-us');
         const tokensWithBoundaries = `$${phonemes}$`;
         
-        const inputIds = tokensWithBoundaries.split('').map(char => this.vocab[char] ?? 0);
+        let inputIds = tokensWithBoundaries.split('').map(char => this.vocab[char] ?? 0);
         
+        // [CRITICAL: ROBUSTNESS] Prevent BERT max sequence length crash
+        // The Kitten (VITS/BERT) ONNX models typically have a hard-coded 512 token limit.
+        if (inputIds.length > 510) {
+            logger.warn('KittenEngine', `Sequence too long (${inputIds.length}), truncating to 510 to prevent OOM/Shape errors.`);
+            inputIds = inputIds.slice(0, 510);
+            inputIds[inputIds.length - 1] = this.vocab['$'] ?? 0;
+        }
+
         while (inputIds.length < 5) {
             inputIds.push(this.vocab[' '] ?? 0);
         }

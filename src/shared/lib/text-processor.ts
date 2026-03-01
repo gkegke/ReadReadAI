@@ -18,7 +18,9 @@ export function hashText(str: string): string {
  * Uses RecursiveCharacterTextSplitter to handle hierarchy (Paragraph -> Sentence -> Clause).
  * This ensures chunks end at "Breath Groups," avoiding mechanical cadence.
  */
-export async function chunkText(text: string, maxChunkSize = 800): Promise<string[]> {
+// [CRITICAL FIX] Decreased max chunk size to 400 to prevent exceeding the 512 token
+// sequence length limits typical of edge/web ONNX models.
+export async function chunkText(text: string, maxChunkSize = 400): Promise<string[]> {
     const normalized = text.replace(/\r\n/g, '\n').trim();
     if (!normalized) return [];
 

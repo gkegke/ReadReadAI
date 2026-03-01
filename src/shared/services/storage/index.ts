@@ -38,7 +38,9 @@ export const storage: StorageService = {
   readFile: async (p) => { await initializeStorageImplementation(); return instance!.readFile(p); },
   exists: async (p) => { await initializeStorageImplementation(); return instance!.exists(p); },
   deleteFile: async (p) => { await initializeStorageImplementation(); return instance!.deleteFile(p); },
-  deleteDirectory: async (p) => { await initializeStorageImplementation(); return instance!.deleteDirectory(p); }
+  deleteDirectory: async (p) => { await initializeStorageImplementation(); return instance!.deleteDirectory(p); },
+  // [CRITICAL FIX] Map the listDirectory API to the underlying instance
+  listDirectory: async (p) => { await initializeStorageImplementation(); return instance!.listDirectory(p); }
 };
 
 export type * from './types';
