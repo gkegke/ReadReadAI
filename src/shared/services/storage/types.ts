@@ -30,6 +30,12 @@ export interface StorageService {
   deleteDirectory(path: string): Promise<void>;
   
   /**
+   * List all files in a specific directory.
+   * @param path - Relative path
+   */
+  listDirectory(path: string): Promise<string[]>;
+  
+  /**
    * Check if a file exists.
    */
   exists(path: string): Promise<boolean>;

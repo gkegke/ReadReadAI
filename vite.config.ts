@@ -10,12 +10,13 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
       workbox: {
-        // [Critical] Increase limit for large ONNX models
         maximumFileSizeToCacheInBytes: 250 * 1024 * 1024, 
         globPatterns: ['**/*.{js,css,html,ico,png,svg,wasm}'],
+        // [CRITICAL FIX] Prevent PWA from mangling AudioWorklets. 
+        // Service Worker interception often breaks Worklet CORS & MIME type mapping
+        globIgnores: ['**/node_modules/**/*', '**/*audio-processor*.js', '**/*audio-processor*.ts'],
         runtimeCaching: [
           {
-            // Cache AI Models and WASM binaries with a CacheFirst strategy
             urlPattern: /\.(?:onnx|wasm|bin|json)$/,
             handler: 'CacheFirst',
             options: {

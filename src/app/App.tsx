@@ -4,15 +4,15 @@ import { useTTSStore } from '../features/tts/store/useTTSStore'
 import { ModelStatus } from '../shared/types/tts'
 import { useSystemStore } from '../shared/store/useSystemStore'
 import { DemoService } from '../shared/services/DemoService'
+import { StorageQuotaService } from '../shared/services/storage/StorageQuotaService'
 import { useServices } from '../shared/context/ServiceContext'
 import { AlertTriangle } from 'lucide-react'
 import { BootScreen } from '../shared/components/ui/BootScreen'
 
 /**
- * App (V2.4 - Global Orchestrator)
+ * App (V2.5 - Global Orchestrator & Reconciler)
  */
 const App: React.FC = () => {
-  // [EPIC 1] Extracted queue from DI context to manually initialize it safely
   const { tts, g2p, storage, logger, queue } = useServices();
   const { modelStatus, errorMessage } = useTTSStore();
   const { storageMode, activeModelId } = useSystemStore();
@@ -26,10 +26,13 @@ const App: React.FC = () => {
         logger.info('App', 'Initialising Core Systems...');
         try {
             await storage.init();
+            
+            // [EPIC 1] Run background garbage collection immediately on startup
+            await StorageQuotaService.reconcileStorage();
+            
             await g2p.init(); 
             if (modelStatus === ModelStatus.UNLOADED) await tts.loadModel(activeModelId);
             
-            // [EPIC 1] Predictable orchestration startup
             await queue.init(); 
 
             await DemoService.checkAndCreateDemoProject();
@@ -44,7 +47,6 @@ const App: React.FC = () => {
     <>
       <BootScreen />
       
-      {/* System Notices Layer */}
       <div className="fixed top-0 left-0 right-0 z-[100] pointer-events-none">
           {storageMode === 'memory' && (
               <div className="bg-amber-500 text-white text-[10px] font-bold uppercase p-1 text-center flex items-center justify-center gap-2 pointer-events-auto">

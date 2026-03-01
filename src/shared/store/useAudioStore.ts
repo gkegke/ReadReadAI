@@ -3,10 +3,12 @@ import { audioPlaybackService, PlaybackState } from '../../features/studio/servi
 import { ChunkRepository } from '../../features/studio/api/ChunkRepository'; 
 import { ProjectRepository } from '../../features/library/api/ProjectRepository';
 import { storage } from '../services/storage';
+import { logger } from '../services/Logger';
+import { db } from '../db';
 
 interface AudioState {
   playbackState: PlaybackState;
-  isPlaying: boolean; // [FIXED] Explicitly declared for React reactivity bounds
+  isPlaying: boolean;
   activeChunkId: number | null;
   playbackSpeed: number;
   currentTime: number;
@@ -18,17 +20,25 @@ interface AudioState {
   togglePlay: () => void;
   playNext: () => Promise<void>;
   setTime: (current: number, duration: number) => void;
+  handlePlaybackError: (chunkId: number) => Promise<void>;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => {
   
-  // Single Source of Truth synchronization from Machine to Zustand
   audioPlaybackService.actor.subscribe((snapshot) => {
+      const state = snapshot.value as PlaybackState;
+      
       set({ 
-          playbackState: snapshot.value as PlaybackState,
-          isPlaying: snapshot.value === PlaybackState.PLAYING, // Fix missing reactivity trigger
+          playbackState: state,
+          isPlaying: state === PlaybackState.PLAYING,
           activeChunkId: snapshot.context.activeChunkId 
       });
+
+      // [EPIC 5] Auto-healing Playback
+      // Detects transition to ERROR state and triggers healing logic.
+      if (state === PlaybackState.ERROR && snapshot.context.activeChunkId) {
+          get().handlePlaybackError(snapshot.context.activeChunkId);
+      }
   });
 
   audioPlaybackService.bind(
@@ -45,19 +55,38 @@ export const useAudioStore = create<AudioState>((set, get) => {
     duration: 0,
 
     setPlaybackState: (playbackState) => set({ playbackState }),
-    
     setActiveChunkId: (id) => set({ activeChunkId: id, currentTime: 0, duration: 0 }),
-    
     setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
-    
-    togglePlay: () => {
-      audioPlaybackService.toggle();
-    },
+    togglePlay: () => audioPlaybackService.toggle(),
     
     /**
-     * [CRITICAL FIX] Orchestrating true automatic gapless advance
-     * Retrieves the next DB record, ensures the audio exists physically, and fires the payload.
+     * [EPIC 5] Indestructible Playback Logic.
+     * Deletes corrupted files and skips to next chunk seamlessly.
      */
+    handlePlaybackError: async (chunkId) => {
+      if (get().playbackState !== PlaybackState.ERROR) return;
+      
+      logger.warn('AudioStore', `Playback error on chunk ${chunkId}. Auto-healing...`);
+      set({ playbackState: PlaybackState.INITIALIZING }); 
+      
+      try {
+          const chunk = await ChunkRepository.get(chunkId);
+          if (chunk) {
+              if (chunk.generatedFilePath) {
+                  await storage.deleteFile(chunk.generatedFilePath);
+              }
+              if (chunk.cleanTextHash) {
+                  await db.audioCache.delete(chunk.cleanTextHash);
+              }
+              await db.chunks.update(chunkId, { status: 'pending', generatedFilePath: null });
+          }
+      } catch (e) {
+          logger.error('AudioStore', 'Failed to heal chunk', e);
+      }
+      
+      get().playNext();
+    },
+    
     playNext: async () => {
       const { activeChunkId } = get();
       if (!activeChunkId) return;
@@ -65,7 +94,6 @@ export const useAudioStore = create<AudioState>((set, get) => {
       const nextChunk = await ChunkRepository.getNext(activeChunkId);
       
       if (nextChunk) {
-          // Visually jump to next chunk immediately
           set({ activeChunkId: nextChunk.id, currentTime: 0, duration: 0 });
           
           try {
@@ -74,18 +102,15 @@ export const useAudioStore = create<AudioState>((set, get) => {
               
               if (freshChunk?.generatedFilePath) {
                   const blob = await storage.readFile(freshChunk.generatedFilePath);
-                  
-                  // If the file was pre-decoded by `usePlaybackEngine.ts`, 
-                  // this command will resolve in the machine instantly causing zero gap.
                   audioPlaybackService.playChunk(nextChunk.id!, blob);
                   return;
               }
           } catch (e) {
-              console.error("[AudioStore] Failed to auto-play next chunk in sequence:", e);
+              logger.error('AudioStore', 'Autoplay skip failure', e);
           }
       }
       
-      // End of sequence fallback
+      audioPlaybackService.stop();
       set({ playbackState: PlaybackState.IDLE, isPlaying: false });
     },
 

@@ -4,10 +4,9 @@ import { useTTSStore } from '../store/useTTSStore';
 import { ModelStatus, type ModelConfig, type TTSWorkerApi } from '../../../shared/types/tts';
 import { storage } from '../../../shared/services/storage';
 import { logger } from '../../../shared/services/Logger';
-import { WorkerFactory } from '../../../shared/lib/worker-factory'; // NEW
+import { WorkerFactory } from '../../../shared/lib/worker-factory';
 
 class TTSService {
-  // NEW: Use the robust factory
   private factory = new WorkerFactory<TTSWorkerApi>(TTSWorker, 'TTS-Core');
   private localStatus: ModelStatus = ModelStatus.UNLOADED;
   private isUIContext: boolean = typeof window !== 'undefined';
@@ -16,13 +15,19 @@ class TTSService {
     const markName = `model-load-${modelId}`;
     performance.mark(markName);
     
+    // [EPIC 2] WASM Lifecycle Management
+    // If a model is already loaded, we must tear down the worker entirely to free the WASM InferenceSession array buffers.
+    if (this.localStatus !== ModelStatus.UNLOADED) {
+        logger.info('TTS', 'Destroying old TTS Worker to prevent WebAssembly OOM...');
+        this.factory.recreate();
+    }
+
     if (this.isUIContext) {
         useTTSStore.getState().setStatus(ModelStatus.LOADING);
     }
     this.localStatus = ModelStatus.LOADING;
 
     try {
-        // NEW: specific type usage via factory
         const worker = await this.factory.getInstance();
         
         const result = await worker.initModel(modelId, undefined, Comlink.proxy((phase, percent) => {
@@ -52,7 +57,7 @@ class TTSService {
     const worker = await this.factory.getInstance();
     try {
         const result = await worker.generate(text, config, filepath);
-        // Note: With OPFS, the worker writes directly. Blob is legacy fallback.
+        
         if (result.blob) await storage.saveFile(filepath, result.blob);
         
         performance.measure(`Inference: ${text.slice(0, 20)}...`, markName);

@@ -3,8 +3,8 @@ import { logger } from '../services/Logger';
 
 /**
  * Type-Safe Worker Factory (V5)
- * [IMPORTANCE: 10/10] Derives TypeScript interfaces from Zod Schemas
- * to ensure the main thread cannot send malformed payloads to workers.
+ * [EPIC 2] Implemented Worker Tearing (`recreate`) to completely sever 
+ * WebAssembly memory contexts from the browser and prevent OOMs.
  */
 export class WorkerFactory<T> {
     private worker: Worker | null = null;
@@ -17,10 +17,6 @@ export class WorkerFactory<T> {
         private readonly name: string
     ) {}
 
-    /**
-     * Returns a type-safe proxy.
-     * T should be the interface of the Worker class.
-     */
     public async getInstance(): Promise<Comlink.Remote<T>> {
         if (this.proxy) return this.proxy;
         return this.init();
@@ -57,9 +53,27 @@ export class WorkerFactory<T> {
         }, 1500);
     }
 
+    /**
+     * Terminate completely halts the worker. It cannot be restarted.
+     */
     public terminate() {
         this.isTerminated = true;
         clearTimeout(this.restartTimer);
         if (this.worker) this.worker.terminate();
+        this.worker = null;
+        this.proxy = null;
+    }
+
+    /**
+     * [CRITICAL] Recreate safely tears down the thread, dumps WASM memory to GC, 
+     * and prepares the factory to spin up a fresh context on next getInstance()
+     */
+    public recreate() {
+        logger.info('WorkerFactory', `Tearing down thread [${this.name}] to flush memory.`);
+        this.isTerminated = false;
+        clearTimeout(this.restartTimer);
+        if (this.worker) this.worker.terminate();
+        this.worker = null;
+        this.proxy = null;
     }
 }

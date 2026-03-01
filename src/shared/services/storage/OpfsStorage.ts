@@ -1,4 +1,3 @@
-// [FILE: /web/src/shared/services/storage/OpfsStorage.ts]
 import type { StorageService } from './types';
 
 export class OpfsStorageService implements StorageService {
@@ -20,7 +19,6 @@ export class OpfsStorageService implements StorageService {
     const fileName = parts.pop()!;
     let currentDir = root;
 
-    // Navigate/Create sub-folders
     for (const part of parts) {
       currentDir = await currentDir.getDirectoryHandle(part, { create });
     }
@@ -42,8 +40,7 @@ export class OpfsStorageService implements StorageService {
 
   async readFile(path: string): Promise<Blob> {
     const fileHandle = await this.getFileHandle(path);
-    const file = await fileHandle.getFile();
-    return file;
+    return await fileHandle.getFile();
   }
 
   async exists(path: string): Promise<boolean> {
@@ -69,25 +66,21 @@ export class OpfsStorageService implements StorageService {
       }
       await currentDir.removeEntry(fileName);
     } catch (e) {
-        // Ignore if file doesn't exist
         console.warn(`[OpfsStorage] Delete failed for ${path}`, e);
     }
   }
 
-  // [CRITICAL FIX] Correctly traverse directory tree before deletion
   async deleteDirectory(path: string): Promise<void> {
     const root = await this.getRootHandle();
     if (!root) return;
 
     const parts = path.split('/').filter(Boolean);
-    // If it's a top-level folder, we can delete directly from root
     if (parts.length === 0) return;
 
     const dirName = parts.pop()!;
     let parentDir = root;
 
     try {
-        // Traverse to the parent of the directory we want to delete
         for (const part of parts) {
             parentDir = await parentDir.getDirectoryHandle(part);
         }
@@ -95,5 +88,29 @@ export class OpfsStorageService implements StorageService {
     } catch (e) {
         console.warn(`[OpfsStorage] Could not delete directory ${path}`, e);
     }
+  }
+
+  // [EPIC 1] New API to support OPFS Reconciliation
+  async listDirectory(path: string): Promise<string[]> {
+      const root = await this.getRootHandle();
+      if (!root) return [];
+      
+      const parts = path.split('/').filter(Boolean);
+      let currentDir = root;
+
+      try {
+          for (const part of parts) {
+              currentDir = await currentDir.getDirectoryHandle(part);
+          }
+          
+          const files: string[] = [];
+          // @ts-ignore (TypeScript missing async iterators for FileSystem API)
+          for await (const [name, handle] of currentDir.entries()) {
+              if (handle.kind === 'file') files.push(name);
+          }
+          return files;
+      } catch (e) {
+          return [];
+      }
   }
 }

@@ -1,4 +1,4 @@
-import { createMachine, createActor, assign } from 'xstate';
+import { createMachine, createActor, assign, fromPromise } from 'xstate';
 import { logger } from '../../../shared/services/Logger';
 import workletUrl from '../workers/audio-processor.ts?url';
 
@@ -19,7 +19,6 @@ interface AudioContextData {
     workletNode: AudioWorkletNode | null;
     activeChunkId: number | null;
     bufferCache: Map<number, AudioBuffer>;
-    // [CRITICAL] Preserved payload state during intermediate transitions
     pendingBlob: Blob | null; 
     pendingOffset: number;
 }
@@ -34,17 +33,18 @@ export class AudioPlaybackService {
         id: 'playback',
         initial: PlaybackState.IDLE,
         context: {
-            ctx: null as AudioContext | null,
-            workletNode: null as AudioWorkletNode | null,
-            activeChunkId: null as number | null,
+            ctx: null,
+            workletNode: null,
+            activeChunkId: null,
             bufferCache: new Map<number, AudioBuffer>(),
-            pendingBlob: null as Blob | null,
-            pendingOffset: 0 as number,
-        },
+            pendingBlob: null,
+            pendingOffset: 0,
+        } as AudioContextData,
         states: {
             [PlaybackState.IDLE]: {
                 entry: 'clearMemory',
                 on: {
+                    HYDRATE: { target: PlaybackState.INITIALIZING },
                     PLAY: { 
                         target: PlaybackState.INITIALIZING,
                         actions: 'assignPlayData' 
@@ -54,19 +54,38 @@ export class AudioPlaybackService {
             [PlaybackState.INITIALIZING]: {
                 invoke: {
                     src: 'setupAudioContext',
-                    onDone: {
-                        target: PlaybackState.BUFFERING,
-                        actions: assign(({ event }) => ({
-                            ctx: event.output.ctx,
-                            workletNode: event.output.workletNode
-                        }))
-                    },
+                    input: ({ context }) => ({ ctx: context.ctx, workletNode: context.workletNode }),
+                    onDone: [
+                        {
+                            guard: 'hasPendingPlay',
+                            target: PlaybackState.BUFFERING,
+                            actions: assign({
+                                ctx: ({ event }) => event.output.ctx,
+                                workletNode: ({ event }) => event.output.workletNode
+                            })
+                        },
+                        {
+                            target: PlaybackState.IDLE,
+                            actions: assign({
+                                ctx: ({ event }) => event.output.ctx,
+                                workletNode: ({ event }) => event.output.workletNode
+                            })
+                        }
+                    ],
                     onError: { target: PlaybackState.ERROR }
                 }
             },
             [PlaybackState.BUFFERING]: {
                 invoke: {
                     src: 'decodeAndPush',
+                    input: ({ context }) => ({
+                        chunkId: context.activeChunkId,
+                        blob: context.pendingBlob,
+                        offset: context.pendingOffset,
+                        bufferCache: context.bufferCache,
+                        ctx: context.ctx,
+                        workletNode: context.workletNode
+                    }),
                     onDone: { target: PlaybackState.PLAYING },
                     onError: { target: PlaybackState.ERROR }
                 }
@@ -99,11 +118,15 @@ export class AudioPlaybackService {
                     PLAY: { 
                         target: PlaybackState.INITIALIZING,
                         actions: 'assignPlayData'
-                    }
+                    },
+                    STOP: { target: PlaybackState.IDLE }
                 }
             }
         }
     }, {
+        guards: {
+            hasPendingPlay: ({ context }) => context.pendingBlob !== null
+        },
         actions: {
             assignPlayData: assign({
                 activeChunkId: ({ event }) => (event as any).chunkId,
@@ -128,64 +151,69 @@ export class AudioPlaybackService {
             }
         },
         actors: {
-            setupAudioContext: async () => {
+            // [XSTATE V5] Correct usage of fromPromise and input parameter
+            setupAudioContext: fromPromise(async ({ input }: { input: any }) => {
                 try {
-                    if (this.actor.getSnapshot().context.ctx?.state === 'running') {
-                        return { 
-                            ctx: this.actor.getSnapshot().context.ctx!, 
-                            workletNode: this.actor.getSnapshot().context.workletNode! 
-                        };
+                    let { ctx, workletNode } = input;
+
+                    if (!ctx) {
+                        logger.info('Audio', 'Initializing Worklet Engine...');
+                        ctx = new AudioContext({ latencyHint: 'playback', sampleRate: 24000 });
                     }
 
-                    logger.info('Audio', 'Initializing Worklet Engine...');
-                    const ctx = new AudioContext({ latencyHint: 'playback', sampleRate: 24000 });
-                    await ctx.audioWorklet.addModule(workletUrl);
-                    const workletNode = new AudioWorkletNode(ctx, 'audio-stream-processor');
-                    workletNode.connect(ctx.destination);
+                    if (ctx.state === 'suspended') {
+                        await ctx.resume();
+                        logger.debug('Audio', 'AudioContext hydrated and resumed via user gesture');
+                    }
 
-                    workletNode.port.onmessage = (e) => {
-                        if (e.data.type === 'PROGRESS' && this.onProgress) {
-                            this.onProgress(e.data.processedFrames / 24000, e.data.totalFrames / 24000);
-                        }
-                        if (e.data.type === 'ENDED') {
-                            this.actor.send({ type: 'ENDED' });
-                            if (this.onEnded) this.onEnded();
-                        }
-                    };
+                    if (!workletNode) {
+                        await ctx.audioWorklet.addModule(workletUrl);
+                        workletNode = new AudioWorkletNode(ctx, 'audio-stream-processor');
+                        workletNode.connect(ctx.destination);
+
+                        workletNode.port.onmessage = (e) => {
+                            if (e.data.type === 'PROGRESS' && this.onProgress) {
+                                this.onProgress(e.data.processedFrames / 24000, e.data.totalFrames / 24000);
+                            }
+                            if (e.data.type === 'ENDED') {
+                                this.actor.send({ type: 'ENDED' });
+                                if (this.onEnded) this.onEnded();
+                            }
+                        };
+                    }
                     return { ctx, workletNode };
                 } catch (error) {
                     logger.error('Audio', 'Failed to setup AudioContext', error);
                     throw error;
                 }
-            },
-            decodeAndPush: async ({ context }) => {
-                // [CRITICAL] Retrieve guaranteed data preserved during the XState transition
-                const { activeChunkId: chunkId, pendingBlob: blob, pendingOffset: offset } = context;
+            }),
+            decodeAndPush: fromPromise(async ({ input }: { input: any }) => {
+                const { chunkId, blob, offset, bufferCache, ctx, workletNode } = input;
                 if (chunkId === null || !blob) throw new Error("Missing play data payload");
 
-                if (context.bufferCache.size > MAX_BUFFER_CACHE) {
-                    const firstKey = context.bufferCache.keys().next().value;
-                    if (firstKey !== undefined) context.bufferCache.delete(firstKey);
+                if (bufferCache.size > MAX_BUFFER_CACHE) {
+                    const firstKey = bufferCache.keys().next().value;
+                    if (firstKey !== undefined) bufferCache.delete(firstKey);
                 }
 
-                let buffer = context.bufferCache.get(chunkId);
+                let buffer = bufferCache.get(chunkId);
                 if (!buffer) {
-                    buffer = await context.ctx!.decodeAudioData(await blob.arrayBuffer());
-                    context.bufferCache.set(chunkId, buffer);
+                    buffer = await ctx!.decodeAudioData(await blob.arrayBuffer());
+                    bufferCache.set(chunkId, buffer);
                 }
 
-                context.workletNode?.port.postMessage({ type: 'CLEAR' });
+                workletNode?.port.postMessage({ type: 'CLEAR' });
                 const pcmData = buffer.getChannelData(0);
                 const startFrame = Math.floor(offset * buffer.sampleRate);
                 
-                context.workletNode?.port.postMessage({ 
+                workletNode?.port.postMessage({ 
                     type: 'PUSH_DATA', 
                     audio: startFrame > 0 ? pcmData.slice(startFrame) : pcmData,
                     immediate: true 
                 });
 
                 return { chunkId };
-            }
+            })
         }
     });
 
@@ -194,6 +222,10 @@ export class AudioPlaybackService {
     public bind(onProgress: ProgressCallback, onEnded: EndedCallback) {
         this.onProgress = onProgress;
         this.onEnded = onEnded;
+    }
+
+    public async hydrate() {
+        this.actor.send({ type: 'HYDRATE' });
     }
 
     public playChunk(chunkId: number, blob: Blob, offset: number = 0) {
@@ -219,6 +251,10 @@ export class AudioPlaybackService {
 
     public toggle() {
         this.actor.send({ type: 'TOGGLE' });
+    }
+
+    public stop() {
+        this.actor.send({ type: 'STOP' });
     }
 
     public get state(): PlaybackState {

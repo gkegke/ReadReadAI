@@ -6,62 +6,69 @@ import { StorageQuotaService } from '../../../shared/services/storage/StorageQuo
 
 export const AudioGenerationService = {
     async generate(chunkId: number): Promise<void> {
-        const chunk = await db.chunks.get(chunkId);
+        const initialChunk = await db.chunks.get(chunkId);
         
-        // [EPIC 1] Removed lock `chunk.status === 'processing'`. 
-        // This allows user's manual JIT "Play" clicks to override stuck states
-        // and force the system to heal itself.
-        if (!chunk || chunk.status === 'generated') return;
+        if (!initialChunk || initialChunk.status === 'generated') return;
 
-        // [STABILITY] Check for space before attempting synthesis
-        await StorageQuotaService.checkAndPurge();
+        // [EPIC 3] Mutex key that spans across JIT calls and background Web Workers
+        const lockKey = `readread-gen-${initialChunk.cleanTextHash}`;
 
-        const project = await db.projects.get(chunk.projectId);
-        if (!project) return;
+        await navigator.locks.request(lockKey, async () => {
+            // [CRITICAL] Re-fetch the chunk inside the lock boundary. 
+            // If the queue just generated this chunk while we waited for the lock, we must abort.
+            const chunk = await db.chunks.get(chunkId);
+            if (!chunk || chunk.status === 'generated') return;
 
-        await db.chunks.update(chunkId, { status: 'processing', updatedAt: new Date() });
+            // [STABILITY] Check for space before attempting synthesis
+            await StorageQuotaService.checkAndPurge();
 
-        try {
-            const voiceId = chunk.voiceOverride?.voiceId || project.voiceSettings?.voiceId || 'af_heart';
-            const speed = chunk.voiceOverride?.speed || project.voiceSettings?.speed || 1.0;
-            const config = { voice: voiceId, speed: speed, lang: 'en-us' };
-            const filePath = `audio/${chunk.cleanTextHash}.wav`;
+            const project = await db.projects.get(chunk.projectId);
+            if (!project) return;
 
-            // Persistent Cache Check
-            const cached = await db.audioCache.get(chunk.cleanTextHash);
-            if (cached && await storage.exists(cached.path)) {
-                // [LRU] Update access time on cache hit
-                await StorageQuotaService.touch(chunk.cleanTextHash);
-                
+            await db.chunks.update(chunkId, { status: 'processing', updatedAt: new Date() });
+
+            try {
+                const voiceId = chunk.voiceOverride?.voiceId || project.voiceSettings?.voiceId || 'af_heart';
+                const speed = chunk.voiceOverride?.speed || project.voiceSettings?.speed || 1.0;
+                const config = { voice: voiceId, speed: speed, lang: 'en-us' };
+                const filePath = `audio/${chunk.cleanTextHash}.wav`;
+
+                // Persistent Cache Check
+                const cached = await db.audioCache.get(chunk.cleanTextHash);
+                if (cached && await storage.exists(cached.path)) {
+                    // [LRU] Update access time on cache hit
+                    await StorageQuotaService.touch(chunk.cleanTextHash);
+                    
+                    await db.chunks.update(chunkId, { 
+                        status: 'generated',
+                        generatedFilePath: cached.path 
+                    });
+                    return;
+                }
+
+                const result = await ttsService.generate(chunk.textContent, config, filePath);
+
+                await db.audioCache.put({
+                    hash: chunk.cleanTextHash,
+                    path: filePath,
+                    byteSize: result.byteSize,
+                    mimeType: 'audio/wav',
+                    createdAt: new Date(),
+                    lastAccessedAt: new Date() // [LRU] Initialize timestamp
+                });
+
                 await db.chunks.update(chunkId, { 
                     status: 'generated',
-                    generatedFilePath: cached.path 
+                    generatedFilePath: filePath,
+                    waveformPeaks: result.peaks,
+                    updatedAt: new Date()
                 });
-                return;
+
+            } catch (error) {
+                logger.error('AudioGen', `Failed synthesis for chunk ${chunkId}`, error);
+                await db.chunks.update(chunkId, { status: 'failed_tts', updatedAt: new Date() });
+                throw error; // Throw so JIT callers know it failed
             }
-
-            const result = await ttsService.generate(chunk.textContent, config, filePath);
-
-            await db.audioCache.put({
-                hash: chunk.cleanTextHash,
-                path: filePath,
-                byteSize: result.byteSize,
-                mimeType: 'audio/wav',
-                createdAt: new Date(),
-                lastAccessedAt: new Date() // [LRU] Initialize timestamp
-            });
-
-            await db.chunks.update(chunkId, { 
-                status: 'generated',
-                generatedFilePath: filePath,
-                waveformPeaks: result.peaks,
-                updatedAt: new Date()
-            });
-
-        } catch (error) {
-            logger.error('AudioGen', `Failed synthesis for chunk ${chunkId}`, error);
-            await db.chunks.update(chunkId, { status: 'failed_tts', updatedAt: new Date() });
-            throw error; // [EPIC 1] Throw so JIT callers know it failed
-        }
+        });
     }
 };

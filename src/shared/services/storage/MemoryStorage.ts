@@ -1,9 +1,5 @@
 import type { StorageService } from './types';
 
-/**
- * Fallback storage implementation for environments where OPFS is unavailable
- * (e.g., Firefox Private Browsing).
- */
 export class MemoryStorageService implements StorageService {
   private files = new Map<string, Blob>();
 
@@ -11,7 +7,6 @@ export class MemoryStorageService implements StorageService {
     return Promise.resolve();
   }
 
-  // Memory storage cannot provide a FileSystemHandle for the worker
   async getRootHandle(): Promise<FileSystemDirectoryHandle | null> {
     return null;
   }
@@ -44,5 +39,18 @@ export class MemoryStorageService implements StorageService {
       }
     }
     keysToDelete.forEach(k => this.files.delete(k));
+  }
+
+  // [EPIC 1] List implementation for memory mapping
+  async listDirectory(path: string): Promise<string[]> {
+      const files: string[] = [];
+      const prefix = path.endsWith('/') ? path : `${path}/`;
+      
+      for (const key of this.files.keys()) {
+          if (key.startsWith(prefix)) {
+              files.push(key.replace(prefix, ''));
+          }
+      }
+      return files;
   }
 }
