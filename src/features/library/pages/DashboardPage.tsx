@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useProjects } from '../../../shared/hooks/useQueries';
-import { FileText, Clock, LayoutGrid, Zap, UploadCloud, ShieldCheck, Disc, Trash2, Plus } from 'lucide-react';
+import { FileText, Clock, LayoutGrid, Zap, UploadCloud, ShieldCheck, Disc, Trash2, Plus, Loader2 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { ProjectRepository } from '../api/ProjectRepository';
 import { Button } from '../../../shared/components/ui/button';
@@ -13,6 +13,7 @@ export const DashboardPage: React.FC = () => {
     const { data: projects, isLoading } = useProjects();
     const [isDragging, setIsDragging] = useState(false);
     const [dragCounter, setDragCounter] = useState(0);
+    const [importProgress, setImportProgress] = useState<{ active: boolean, percent: number, text: string }>({ active: false, percent: 0, text: '' });
 
     const handleQuickStart = async () => {
         const id = await ProjectRepository.createProject(`Session ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`);
@@ -43,15 +44,23 @@ export const DashboardPage: React.FC = () => {
     // Unified import routine to prevent Zustand race conditions
     const processFileImport = async (file: File) => {
         try {
+            setImportProgress({ active: true, percent: 0, text: 'Initializing...' });
             const projectName = file.name.replace(/\.[^/.]+$/, "") || "Imported Document";
             const id = await ProjectRepository.createProject(projectName);
             useProjectStore.getState().setActiveProject(id);
+            
             // Explicitly pass ID to guarantee it assigns to the freshly minted project
-            await ProjectRepository.importDocument(file, id);
+            // [EPIC 2] Pipeline UI progress event linkage
+            await ProjectRepository.importDocument(file, id, undefined, (percent, text) => {
+                setImportProgress({ active: true, percent, text });
+            });
+            
             navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
         } catch (err) {
             console.error("Failed to import file", err);
             alert("Failed to import document.");
+        } finally {
+            setImportProgress({ active: false, percent: 0, text: '' });
         }
     };
 
@@ -98,7 +107,20 @@ export const DashboardPage: React.FC = () => {
                 </div>
             )}
 
-            <div className={`max-w-6xl mx-auto ${isDragging ? 'pointer-events-none opacity-50' : ''}`}>
+            {/* [EPIC 2] Blocking Progress Overlay to prevent premature interaction */}
+            {importProgress.active && (
+                <div className="absolute inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm m-4 rounded-3xl animate-in fade-in">
+                    <div className="text-center space-y-4">
+                        <Loader2 className="w-16 h-16 text-primary mx-auto animate-spin" />
+                        <h2 className="text-xl font-black tracking-tight uppercase">{importProgress.text}</h2>
+                        <div className="w-64 h-2 bg-secondary rounded-full overflow-hidden border border-border">
+                            <div className="h-full bg-primary transition-all duration-300 shadow-[0_0_15px_rgba(var(--primary),0.5)]" style={{ width: `${importProgress.percent}%` }} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            <div className={`max-w-6xl mx-auto ${isDragging || importProgress.active ? 'pointer-events-none opacity-50' : ''}`}>
                 <header className="flex items-end justify-between mb-12">
                     <div className="flex items-center gap-5">
                         <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/20">
@@ -194,7 +216,6 @@ export const DashboardPage: React.FC = () => {
                             </Link>
                         ))}
 
-                        {/* [UX] Persistent Import Affordance */}
                         <label className="group p-6 rounded-2xl border-2 border-dashed border-border bg-transparent hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center cursor-pointer min-h-[200px]">
                             <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={handleFileInput} />
                             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">

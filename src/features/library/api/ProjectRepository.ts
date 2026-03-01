@@ -42,11 +42,11 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         }
     }
 
-    async importDocument(file: File, targetProjectId?: number, afterOrderIndex?: number): Promise<void> {
+    async importDocument(file: File, targetProjectId?: number, afterOrderIndex?: number, onProgress?: (p: number, t: string) => void): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
         if (!projectId) throw new Error("No active project");
         
-        const result = await importService.importFile(file, projectId, afterOrderIndex);
+        const result = await importService.importFile(file, projectId, afterOrderIndex, onProgress);
         
         await this.update(projectId, { 
             sourceFileName: result.fileName, 
@@ -54,11 +54,11 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         });
     }
 
-    async importRawText(text: string, targetProjectId?: number, afterOrderIndex?: number): Promise<void> {
+    async importRawText(text: string, targetProjectId?: number, afterOrderIndex?: number, onProgress?: (p: number, t: string) => void): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
         if (!projectId) return;
 
-        await importService.importText(text, projectId, afterOrderIndex);
+        await importService.importText(text, projectId, afterOrderIndex, onProgress);
         await this.update(projectId, { updatedAt: new Date() });
     }
 

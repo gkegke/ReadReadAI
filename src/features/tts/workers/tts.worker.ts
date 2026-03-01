@@ -50,6 +50,10 @@ class TTSWorkerImpl {
                 const { KittenEngine } = await import('../lib/KittenEngine');
                 EngineClass = KittenEngine;
                 break;
+            case 'dummy':
+                const { DummyEngine } = await import('../lib/DummyEngine');
+                EngineClass = DummyEngine;
+                break;
             default:
                 throw new Error("Unknown Provider");
         }

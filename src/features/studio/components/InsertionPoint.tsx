@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Plus, Send, X, Type, FileUp } from 'lucide-react';
+import { Plus, Send, X, Type, FileUp, Loader2 } from 'lucide-react';
 import { Button } from '../../../shared/components/ui/button';
 import { useInsertBlockMutation } from '../../../shared/hooks/useMutations';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
@@ -36,7 +36,10 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({ projectId, after
         
         setIsUploading(true);
         try {
-            await ProjectRepository.importDocument(file, projectId, afterOrderIndex);
+            await ProjectRepository.importDocument(file, projectId, afterOrderIndex, (percent, text) => {
+                 // The progress fires, but since this is mid-document, we just show a generic spinner
+                 // to keep the UX clean.
+            });
             setIsActive(false);
         } catch (err) {
             logger.error('InsertionPoint', 'Failed mid-project file insertion', err);
@@ -59,8 +62,14 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({ projectId, after
 
                     {tab === 'file' ? (
                          <div className="flex flex-col items-center justify-center py-10 border-2 border-dashed border-primary/20 rounded-xl bg-background/50 transition-colors hover:border-primary/40 hover:bg-secondary/30">
-                            <FileUp className="w-8 h-8 text-primary/50 mb-3" />
-                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">Insert PDF or TXT</p>
+                            {isUploading ? (
+                                <Loader2 className="w-8 h-8 text-primary/50 mb-3 animate-spin" />
+                            ) : (
+                                <FileUp className="w-8 h-8 text-primary/50 mb-3" />
+                            )}
+                            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">
+                                {isUploading ? 'Parsing Document...' : 'Insert PDF or TXT'}
+                            </p>
                             <label className="cursor-pointer">
                                 <Button asChild variant="secondary" size="sm" disabled={isUploading}>
                                     <span>{isUploading ? 'Processing...' : 'Browse File'}</span>

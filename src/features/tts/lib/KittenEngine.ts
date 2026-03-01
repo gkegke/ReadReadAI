@@ -5,11 +5,6 @@ import { assetClient } from './utils';
 import { logger } from '../../../shared/services/Logger';
 import * as ort from 'onnxruntime-web';
 
-/**
- * KittenEngine (V1.3 - Robust Tensor Orchestration)
- * [FIX: EPIC 1] Dynamic tensor matching explicitly handles ONNX version
- * differences without throwing "invalid input 'tokens'".
- */
 export class KittenEngine extends BaseOnnxEngine {
     private vocab: Record<string, number> = {};
     private voices: any = null;
@@ -41,68 +36,57 @@ export class KittenEngine extends BaseOnnxEngine {
 
         const phonemes = await this.getPhonemes(text, 'en-us');
         const tokensWithBoundaries = `$${phonemes}$`;
-        
         let inputIds = tokensWithBoundaries.split('').map(char => this.vocab[char] ?? 0);
         
-        // [CRITICAL: ROBUSTNESS] Prevent BERT max sequence length crash
-        // The Kitten (VITS/BERT) ONNX models typically have a hard-coded 512 token limit.
         if (inputIds.length > 510) {
-            logger.warn('KittenEngine', `Sequence too long (${inputIds.length}), truncating to 510 to prevent OOM/Shape errors.`);
+            logger.warn('KittenEngine', `Sequence too long (${inputIds.length}), truncating.`);
             inputIds = inputIds.slice(0, 510);
             inputIds[inputIds.length - 1] = this.vocab['$'] ?? 0;
         }
 
-        while (inputIds.length < 5) {
-            inputIds.push(this.vocab[' '] ?? 0);
-        }
+        while (inputIds.length < 5) inputIds.push(this.vocab[' '] ?? 0);
 
-        const sequenceLength = inputIds.length;
-        
-        const tensorIds = this.createInt64Tensor(inputIds, [1, sequenceLength]);
-        const tensorLengths = this.createInt64Tensor([sequenceLength], [1]);
-        
-        const maskData = new Array(sequenceLength).fill(1);
-        const tensorMask = this.createInt64Tensor(maskData, [1, sequenceLength]);
+        const seqLen = inputIds.length;
+        const tIds = this.createInt64Tensor(inputIds, [1, seqLen]);
+        const tLen = this.createInt64Tensor([seqLen], [1]);
+        const tMask = this.createInt64Tensor(new Array(seqLen).fill(1), [1, seqLen]);
         
         const voiceId = config.voice in this.voices ? config.voice : Object.keys(this.voices)[0];
         const speakerEmbedding = new Float32Array(this.voices[voiceId][0]);
-        const tensorStyle = this.createFloat32Tensor(speakerEmbedding, [1, speakerEmbedding.length]);
-        
-        const tensorSpeed = this.createFloat32Tensor([config.speed || 1.0], [1]);
+        const tStyle = this.createFloat32Tensor(speakerEmbedding, [1, speakerEmbedding.length]);
+        const tSpeed = this.createFloat32Tensor([config.speed || 1.0], [1]);
+        const tScales = this.createFloat32Tensor([0.667, config.speed || 1.0, 0.8], [3]);
 
-        logger.debug('KittenEngine', 'Executing Inference Session', { 
-            seqLen: sequenceLength, 
-            voiceId 
-        });
-
-        // [EPIC 1] Guard against 'invalid input tokens' by only injecting recognized parameters
         const feed: Record<string, ort.Tensor> = {};
-        const expectedInputs = this.session!.inputNames;
+        const expected = this.session!.inputNames;
+        if (expected.includes('input_ids')) feed['input_ids'] = tIds;
+        else if (expected.includes('tokens')) feed['tokens'] = tIds;
+        if (expected.includes('input_lengths')) feed['input_lengths'] = tLen;
+        if (expected.includes('attention_mask')) feed['attention_mask'] = tMask;
+        if (expected.includes('style')) feed['style'] = tStyle;
+        if (expected.includes('speed')) feed['speed'] = tSpeed;
+        if (expected.includes('scales')) feed['scales'] = tScales;
 
-        if (expectedInputs.includes('input_ids')) feed['input_ids'] = tensorIds;
-        else if (expectedInputs.includes('tokens')) feed['tokens'] = tensorIds;
-        else if (expectedInputs.includes('input')) feed['input'] = tensorIds;
-
-        if (expectedInputs.includes('input_lengths')) feed['input_lengths'] = tensorLengths;
-        if (expectedInputs.includes('attention_mask')) feed['attention_mask'] = tensorMask;
-        if (expectedInputs.includes('style')) feed['style'] = tensorStyle;
-        if (expectedInputs.includes('speed')) feed['speed'] = tensorSpeed;
-        if (expectedInputs.includes('scales')) feed['scales'] = this.createFloat32Tensor([0.667, config.speed || 1.0, 0.8], [3]);
-
+        let results: ort.InferenceSession.ReturnType | null = null;
         try {
-            const results = await this.session!.run(feed);
-
+            results = await this.session!.run(feed);
+            // [CRITICAL: EPIC 1] Deep copy immediately to allow disposal of the WASM-backed tensor
+            const audioData = new Float32Array(results.waveform.data as Float32Array);
+            
             return {
-                audio: results.waveform.data as Float32Array,
+                audio: audioData,
                 sampleRate: 24000
             };
-        } catch (err: any) {
-            logger.error('KittenEngine', 'ORT Run Failed', { 
-                error: err.message,
-                inputIds,
-                vocabSize: Object.keys(this.vocab).length
-            });
-            throw err;
+        } finally {
+            // [CRITICAL: EPIC 1] Explicit WASM Memory Release
+            // JS GC cannot reach into the WASM Heap. These must be manually freed.
+            tIds.dispose();
+            tLen.dispose();
+            tMask.dispose();
+            tStyle.dispose();
+            tSpeed.dispose();
+            tScales.dispose();
+            if (results && results.waveform) results.waveform.dispose();
         }
     }
 

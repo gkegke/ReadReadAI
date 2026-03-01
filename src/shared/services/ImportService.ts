@@ -17,12 +17,12 @@ class ImportService {
         return this.worker;
     }
 
-    async importFile(file: File, projectId: number, afterOrderIndex?: number): Promise<ImportResult> {
-        return await this.getWorker().processFile(file, projectId, afterOrderIndex);
+    async importFile(file: File, projectId: number, afterOrderIndex?: number, onProgress?: (p: number, t: string) => void): Promise<ImportResult> {
+        return await this.getWorker().processFile(file, projectId, afterOrderIndex, onProgress ? Comlink.proxy(onProgress) : undefined);
     }
 
-    async importText(text: string, projectId: number, afterOrderIndex?: number): Promise<ImportResult> {
-        return await this.getWorker().processText(text, projectId, afterOrderIndex);
+    async importText(text: string, projectId: number, afterOrderIndex?: number, onProgress?: (p: number, t: string) => void): Promise<ImportResult> {
+        return await this.getWorker().processText(text, projectId, afterOrderIndex, onProgress ? Comlink.proxy(onProgress) : undefined);
     }
 }
 

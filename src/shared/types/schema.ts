@@ -47,16 +47,23 @@ export const JobSchema = z.object({
     createdAt: z.date(),
 });
 
+// [EPIC 4] GC Table Schema
+export const OrphanedFileSchema = z.object({
+    id: z.number().optional(),
+    path: z.string(),
+    createdAt: z.date()
+});
+
 export const IngestWorkerSchema = {
     processFile: z.object({
         file: z.instanceof(File),
         projectId: z.number(),
-        afterOrderIndex: z.number().optional() // [Added Epic 4: Mid-project insertion]
+        afterOrderIndex: z.number().optional() 
     }),
     processText: z.object({
         text: z.string(),
         projectId: z.number(),
-        afterOrderIndex: z.number().optional() // [Added Epic 4: Mid-project insertion]
+        afterOrderIndex: z.number().optional() 
     })
 };
 
@@ -93,5 +100,6 @@ export type ChunkRole = z.infer<typeof ChunkRoleSchema>;
 export type Chunk = z.infer<typeof ChunkSchema>;
 export type ChunkStatus = z.infer<typeof ChunkStatusSchema>;
 export type Job = z.infer<typeof JobSchema>;
+export type OrphanedFile = z.infer<typeof OrphanedFileSchema>;
 export type LogSeverity = z.infer<typeof LogSeveritySchema>;
 export type LogEntry = z.infer<typeof LogSchema>;

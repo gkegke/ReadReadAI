@@ -27,8 +27,11 @@ const App: React.FC = () => {
         try {
             await storage.init();
             
-            // [EPIC 1] Run background garbage collection immediately on startup
+            // [EPIC 1] Heavy boot-time reconciliation
             await StorageQuotaService.reconcileStorage();
+            
+            // [EPIC 4] Non-blocking Background Queue GC
+            StorageQuotaService.processOrphanQueue();
             
             await g2p.init(); 
             if (modelStatus === ModelStatus.UNLOADED) await tts.loadModel(activeModelId);
