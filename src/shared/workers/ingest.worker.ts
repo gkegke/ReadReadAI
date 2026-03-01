@@ -7,14 +7,9 @@ import { IngestWorkerSchema } from '../types/schema';
 import { logger } from '../services/Logger';
 import { db } from '../db';
 
-/**
- * IngestWorker (V4 - Thread Isolated DB Persistence)
- * [EPIC 6] Offloads heavy document parsing AND database insertion to a background thread.
- * This prevents massive IPC transfers from locking up the React UI thread.
- */
 class IngestWorker {
-    async processFile(file: File, projectId: number) {
-        IngestWorkerSchema.processFile.parse({ file, projectId });
+    async processFile(file: File, projectId: number, afterOrderIndex?: number) {
+        IngestWorkerSchema.processFile.parse({ file, projectId, afterOrderIndex });
 
         let content = '';
         try {
@@ -30,40 +25,56 @@ class IngestWorker {
             throw new Error(`Failed to parse ${file.type} document.`);
         }
 
-        return await this.ingestAndPersist(content, projectId, file.name);
+        return await this.ingestAndPersist(content, projectId, file.name, afterOrderIndex);
     }
 
-    async processText(text: string, projectId: number) {
-        IngestWorkerSchema.processText.parse({ text, projectId });
-        return await this.ingestAndPersist(text, projectId, 'Direct Input');
+    async processText(text: string, projectId: number, afterOrderIndex?: number) {
+        IngestWorkerSchema.processText.parse({ text, projectId, afterOrderIndex });
+        return await this.ingestAndPersist(text, projectId, 'Direct Input', afterOrderIndex);
     }
 
-    private async ingestAndPersist(text: string, projectId: number, fileName: string) {
+    private async ingestAndPersist(text: string, projectId: number, fileName: string, afterOrderIndex?: number) {
         const rawChunks = await chunkText(text);
         const now = new Date();
         
-        // [PHASE 3] Direct DB Write from Worker
-        return await db.transaction('rw', [db.chapters, db.chunks, db.jobs], async () => {
-            const chapterCount = await db.chapters.where('projectId').equals(projectId).count();
+        return await db.transaction('rw', [db.chunks, db.jobs], async () => {
             const chunkCount = await db.chunks.where('projectId').equals(projectId).count();
+            const startIndex = afterOrderIndex !== undefined ? afterOrderIndex + 1 : chunkCount;
 
-            const chapterId = await db.chapters.add({
-                projectId,
-                name: fileName,
-                orderInProject: chapterCount,
-                createdAt: now
-            });
+            // [EPIC 4] Shift existing chunks downward if inserting into middle of project
+            if (afterOrderIndex !== undefined) {
+                const shiftAmount = rawChunks.length + 1; // +1 for the heading
+                await db.chunks
+                    .where('projectId').equals(projectId)
+                    .filter(c => c.orderInProject > afterOrderIndex)
+                    .modify(c => c.orderInProject += shiftAmount);
+            }
 
-            const chunksToAdd = rawChunks.map((content, index) => ({
+            const chunksToAdd = [];
+            
+            chunksToAdd.push({
                 projectId,
-                chapterId,
-                orderInProject: chunkCount + index,
-                textContent: content,
-                cleanTextHash: hashText(content),
+                role: 'heading' as const,
+                orderInProject: startIndex,
+                textContent: fileName,
+                cleanTextHash: hashText(fileName),
                 status: 'pending' as const,
                 createdAt: now,
                 updatedAt: now
-            }));
+            });
+
+            rawChunks.forEach((content, index) => {
+                chunksToAdd.push({
+                    projectId,
+                    role: 'paragraph' as const,
+                    orderInProject: startIndex + 1 + index,
+                    textContent: content,
+                    cleanTextHash: hashText(content),
+                    status: 'pending' as const,
+                    createdAt: now,
+                    updatedAt: now
+                });
+            });
 
             const chunkIds = await db.chunks.bulkAdd(chunksToAdd, { allKeys: true });
             

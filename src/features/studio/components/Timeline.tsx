@@ -7,20 +7,21 @@ import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useProjectChunks } from '../../../shared/hooks/useQueries'; 
 import { ChunkRepository } from '../api/ChunkRepository';
-import { ProjectRepository } from '../../library/api/ProjectRepository';
-import { useImportTextMutation } from '../../../shared/hooks/useMutations';
-import { Loader2, FileText, FileUp, PlusSquare } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { AppErrorBoundary } from '../../../shared/components/AppErrorBoundary';
-import { Button } from '../../../shared/components/ui/button';
 
-export const Timeline: React.FC = () => {
+/**
+ * Timeline Component
+ * Using a named export to ensure compatibility with StudioPage imports.
+ */
+export function Timeline() {
   const { activeChunkId } = useAudioStore();
-  const { activeProjectId, activeChapterId } = useProjectStore();
-  const { data: chunks, isLoading } = useProjectChunks(activeProjectId, activeChapterId);
-  const { mutate: importText } = useImportTextMutation();
+  const { activeProjectId, scrollToChunkId, setScrollToChunkId } = useProjectStore();
+  const { data: chunks, isLoading } = useProjectChunks(activeProjectId);
   
   const virtuosoRef = useRef<VirtuosoHandle>(null);
 
+  // Auto-scroll logic for Active Playback
   useEffect(() => {
     if (activeChunkId && virtuosoRef.current && chunks) {
         const index = chunks.findIndex(c => c.id === activeChunkId);
@@ -30,13 +31,21 @@ export const Timeline: React.FC = () => {
     }
   }, [activeChunkId, chunks]);
 
+  // Scroll logic for Inspector Headings
+  useEffect(() => {
+    if (scrollToChunkId && virtuosoRef.current && chunks.length > 0) {
+        const index = chunks.findIndex(c => c.id === scrollToChunkId);
+        if (index !== -1) {
+            virtuosoRef.current.scrollIntoView({ index, behavior: 'smooth', align: 'start' });
+        }
+        setScrollToChunkId(null);
+    }
+  }, [scrollToChunkId, chunks, setScrollToChunkId]);
+
   const handleMoveUp = async (index: number) => {
     if (index === 0) return;
     const current = chunks[index];
     const previous = chunks[index - 1];
-    
-    // [CRITICAL FIX] Target explicit swap to avoid collapsing absolute DB indices 
-    // when reordering chunks while inside a filtered Chapter view.
     await ChunkRepository.swapChunks(current.id!, previous.id!);
   };
 
@@ -44,7 +53,6 @@ export const Timeline: React.FC = () => {
     if (index === chunks.length - 1) return;
     const current = chunks[index];
     const next = chunks[index + 1];
-    
     await ChunkRepository.swapChunks(current.id!, next.id!);
   };
 
@@ -56,23 +64,9 @@ export const Timeline: React.FC = () => {
   );
 
   if (!isLoading && chunks.length === 0) return (
-      <div className="h-full flex flex-col items-center justify-center opacity-80 select-none text-center p-8 animate-in fade-in duration-700">
-          <FileText className="w-12 h-12 mb-6 text-primary/50" />
-          <h2 className="text-xl font-black uppercase tracking-widest mb-3">Project is Empty</h2>
-          <p className="text-sm text-muted-foreground mb-8 max-w-md">
-              Start by importing a document, or create an empty block to type in manually.
-          </p>
-          <div className="flex flex-col sm:flex-row items-center gap-4">
-              <Button onClick={() => importText("New Chapter Content...")} className="w-56"><PlusSquare className="w-4 h-4 mr-2"/> Create First Block</Button>
-              <label className="cursor-pointer inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 h-9 px-4 py-2 w-56">
-                  <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (!file || !activeProjectId) return;
-                      await ProjectRepository.importDocument(file, activeProjectId);
-                      e.target.value = '';
-                  }} />
-                  <FileUp className="w-4 h-4 mr-2" /> Import PDF / TXT
-              </label>
+      <div className="h-full w-full bg-background/30 flex flex-col items-center pt-24 animate-in fade-in duration-700">
+          <div className="max-w-4xl w-full px-8">
+              <InsertionPoint projectId={activeProjectId!} afterOrderIndex={-1} />
           </div>
       </div>
   );
@@ -88,7 +82,6 @@ export const Timeline: React.FC = () => {
                     <div className="max-w-4xl mx-auto w-full px-8 relative">
                         <InsertionPoint 
                             projectId={activeProjectId!} 
-                            chapterId={chunk.chapterId} 
                             afterOrderIndex={index - 1} 
                         />
                         <ChunkItem 
@@ -102,7 +95,6 @@ export const Timeline: React.FC = () => {
                         {index === chunks.length - 1 && (
                              <InsertionPoint 
                                 projectId={activeProjectId!} 
-                                chapterId={chunk.chapterId} 
                                 afterOrderIndex={index} 
                             />
                         )}
@@ -115,4 +107,4 @@ export const Timeline: React.FC = () => {
         </AppErrorBoundary>
     </div>
   );
-};
+}

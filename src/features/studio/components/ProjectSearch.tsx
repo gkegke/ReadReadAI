@@ -1,7 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useProjectChunks } from '../../../shared/hooks/useQueries';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
-import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { Search, X, CornerDownLeft } from 'lucide-react';
 import { 
     Popover, 
@@ -9,17 +8,16 @@ import {
     PopoverTrigger,
     PopoverAnchor
 } from '../../../shared/components/ui/popover';
-import { Button } from '../../../shared/components/ui/button';
 import { cn } from '../../../shared/lib/utils';
 import { logger } from '../../../shared/services/Logger';
 
 /**
- * ProjectSearch (V2 - Radix Integrated)
+ * ProjectSearch (V2.1 - Navigation Polish)
  * [UX] Accessible search interface that replaces the hidden Cmd+K palette.
+ * Updated to solely handle navigation (scrolling) rather than forcing playback.
  */
 export const ProjectSearch: React.FC = () => {
-    const { activeProjectId } = useProjectStore();
-    const { setActiveChunkId } = useAudioStore();
+    const { activeProjectId, setScrollToChunkId } = useProjectStore();
     const { data: chunks } = useProjectChunks(activeProjectId);
     
     const [isOpen, setIsOpen] = useState(false);
@@ -32,8 +30,8 @@ export const ProjectSearch: React.FC = () => {
     }, [chunks, query]);
 
     const handleSelect = (chunkId: number) => {
-        logger.info('ProjectSearch', 'User navigated to chunk', { chunkId });
-        setActiveChunkId(chunkId);
+        logger.info('ProjectSearch', 'User navigated to chunk via search', { chunkId });
+        setScrollToChunkId(chunkId); // Safely scroll without triggering TTS playback
         setIsOpen(false);
         setQuery('');
     };

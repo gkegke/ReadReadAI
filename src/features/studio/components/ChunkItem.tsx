@@ -4,8 +4,11 @@ import { useSystemStore } from '../../../shared/store/useSystemStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { 
     PlayCircle, PauseCircle, Settings2, Loader2, ArrowUp, ArrowDown, 
-    SplitSquareVertical, FoldVertical, CheckSquare, Square 
+    SplitSquareVertical, FoldVertical, CheckSquare, Square, PenTool, RefreshCw
 } from 'lucide-react';
+import { 
+    DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator 
+} from '../../../shared/components/ui/dropdown-menu';
 import { useServices } from '../../../shared/context/ServiceContext';
 import { PlaybackState } from '../services/AudioPlaybackService';
 import { 
@@ -28,16 +31,10 @@ interface ChunkItemProps {
   onMoveDown: (index: number) => void;
 }
 
-/**
- * ChunkItem (V3.1 - Waveform Stripped)
- * [CRITICAL: PERFORMANCE] Removed WaveformCanvas to eliminate WebAudio overhead 
- * and fix Vite resolution errors.
- */
 export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, onMoveDown }: ChunkItemProps) => {
   const { playbackState, setActiveChunkId } = useAudioStore();
-  const { selectedChunkIds, toggleChunkSelection } = useProjectStore();
+  const { selectedChunkIds, toggleChunkSelection, isSelectionMode } = useProjectStore();
   
-  // Scoped subscription for the CSS playhead
   const currentTime = useAudioStore(state => state.activeChunkId === chunk.id ? state.currentTime : 0);
   const duration = useAudioStore(state => state.activeChunkId === chunk.id ? state.duration : 0);
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
@@ -62,6 +59,16 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
 
   const isPlaying = isActive && isGlobalPlaying;
   const isDimmed = isZenMode && isGlobalPlaying && !isActive;
+  
+  const isHeading = chunk.role === 'heading';
+
+  // [UX] Auto-resize textarea on mount and edit
+  useEffect(() => {
+      if (isEditing && textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = textareaRef.current.scrollHeight + 'px';
+      }
+  }, [isEditing, editText]);
 
   useEffect(() => {
       let isMounted = true;
@@ -136,51 +143,54 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
       }
   };
 
+  const handleCardClick = (e: React.MouseEvent) => {
+      if (isSelectionMode) {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleChunkSelection(chunk.id!);
+      }
+  };
+
   return (
     <div 
+        onClick={handleCardClick}
         className={cn(
-            "group relative pl-20 pr-12 py-10 transition-all duration-700 ease-out rounded-[2rem]",
+            "group relative pl-12 pr-12 transition-all duration-700 ease-out rounded-[2rem] border border-transparent",
             isActive ? "bg-primary/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] scale-[1.01]" : "hover:bg-secondary/5",
-            isSelected && "bg-primary/5 border border-primary/20",
-            isDimmed && "opacity-10 blur-[3px] grayscale pointer-events-none scale-[0.98]"
+            isSelectionMode && "cursor-pointer hover:border-primary/30",
+            isSelected && "bg-primary/5 border-primary/50 shadow-sm",
+            isDimmed && "opacity-10 blur-[3px] grayscale pointer-events-none scale-[0.98]",
+            isHeading ? "py-14 mt-8" : "py-10"
         )}
     >
-      <button 
-          onClick={() => toggleChunkSelection(chunk.id!)} 
-          className="absolute left-6 top-5 opacity-0 group-hover:opacity-100 transition-opacity"
-      >
-          {isSelected ? <CheckSquare className="w-5 h-5 text-primary"/> : <Square className="w-5 h-5 text-muted-foreground opacity-30 hover:opacity-100"/>}
-      </button>
+        {isSelectionMode ? (
+            <div className="absolute left-4 top-1/2 -translate-y-1/2">
+                {isSelected ? <CheckSquare className="w-5 h-5 text-primary"/> : <Square className="w-5 h-5 text-muted-foreground opacity-30"/>}
+            </div>
+        ) : (
+            <div className={cn("absolute left-4 opacity-10 group-hover:opacity-100 transition-opacity text-[9px] font-mono font-bold select-none text-muted-foreground", isHeading ? "top-16" : "top-12")}>
+                #{index + 1}
+            </div>
+        )}
 
-      <div className="absolute left-4 top-14 flex flex-col items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground w-12">
-          <button onClick={() => onMoveUp(index)} disabled={index === 0} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowUp className="w-4 h-4" /></button>
-          <div className="text-[10px] font-mono font-bold select-none px-1 py-1">#{index + 1}</div>
-          <button onClick={() => onMoveDown(index)} disabled={index === totalChunks - 1} className="p-1 hover:text-primary disabled:opacity-20 transition-colors"><ArrowDown className="w-4 h-4" /></button>
-          <div className="w-4 h-px bg-border my-1" />
-          <button onClick={handleSplit} title="Split Block" className="p-1 hover:text-primary transition-colors"><SplitSquareVertical className="w-4 h-4" /></button>
-          <button onClick={() => mergeChunk(chunk.id!)} disabled={index === totalChunks - 1} title="Merge Down" className="p-1 hover:text-primary disabled:opacity-20 transition-colors mt-0.5"><FoldVertical className="w-4 h-4" /></button>
-      </div>
-
-      <div className="relative">
+      <div className={cn("relative", isSelectionMode && "pointer-events-none")}>
             {isEditing ? (
                 <textarea
                     ref={textareaRef}
                     autoFocus
-                    className="w-full bg-transparent border-none p-0 text-2xl font-serif leading-[1.7] focus:outline-none resize-none overflow-hidden"
+                    className={cn("w-full bg-transparent border-none p-0 focus:outline-none resize-none overflow-hidden", isHeading ? "text-3xl font-black font-sans leading-tight tracking-tight" : "text-2xl font-serif leading-[1.7]")}
                     value={editText}
-                    onChange={(e) => {
-                        setEditText(e.target.value);
-                        e.target.style.height = 'auto';
-                        e.target.style.height = e.target.scrollHeight + 'px';
-                    }}
+                    onChange={(e) => setEditText(e.target.value)}
                     onBlur={handleSave}
                 />
             ) : (
                 <p 
-                    onDoubleClick={() => setIsEditing(true)}
+                    onDoubleClick={() => { if (!isSelectionMode) setIsEditing(true); }}
                     className={cn(
-                        "text-2xl font-serif leading-[1.7] transition-all duration-500 cursor-text selection:bg-primary/20",
-                        isActive ? "text-foreground font-medium" : "text-foreground/80"
+                        "transition-all duration-500 selection:bg-primary/20",
+                        !isSelectionMode && "cursor-text",
+                        isActive ? "text-foreground font-medium" : "text-foreground/80",
+                        isHeading ? "text-3xl font-black font-sans leading-tight tracking-tight text-primary/90" : "text-2xl font-serif leading-[1.7]"
                     )}
                 >
                     {chunk.textContent}
@@ -190,15 +200,17 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
         
       <div className={cn(
           "h-12 mt-4 flex items-center gap-6 transition-all duration-500 ease-in-out",
-          isActive ? "opacity-100" : "opacity-30 group-hover:opacity-100"
+          isActive ? "opacity-100" : "opacity-30 group-hover:opacity-100",
+          isSelectionMode && "pointer-events-none opacity-20"
       )}>
             <div className="flex-1">
                 {chunk.status === 'processing' || isSaving || isJitGenerating ? (
                     <div className="w-full h-[2px] bg-secondary/50 rounded-full overflow-hidden">
                         <div className="h-full bg-primary animate-shimmer w-full" />
                     </div>
+                ) : chunk.status === 'failed_tts' ? (
+                    <div className="w-full h-[1px] bg-destructive/50" />
                 ) : isActive && audioBlob ? (
-                    /* [IMPORTANCE: 10/10] High-performance CSS playhead replaces Wavesurfer canvas */
                     <div className="w-full h-8 mt-2 bg-secondary/10 rounded-lg overflow-hidden relative cursor-default border border-border/20">
                         <div
                             className="absolute top-0 left-0 h-full bg-primary/20 transition-all duration-100 ease-linear"
@@ -210,33 +222,69 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
                         />
                     </div>
                 ) : (
-                    /* Default state for inactive/non-generated chunks */
                     <div className="w-full h-[1px] bg-border/10" />
                 )}
             </div>
 
             <div className="flex items-center gap-4 shrink-0">
-                <button className="text-muted-foreground hover:text-primary transition-colors">
-                    <Settings2 className="w-4 h-4 opacity-40 hover:opacity-100" />
-                </button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <button className="text-muted-foreground hover:text-primary transition-colors focus:outline-none">
+                            <Settings2 className="w-4 h-4 opacity-40 hover:opacity-100" />
+                        </button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                        <DropdownMenuItem onClick={() => setIsEditing(true)}>
+                            <PenTool className="w-3.5 h-3.5 mr-2" /> Edit Text
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={handleSplit}>
+                            <SplitSquareVertical className="w-3.5 h-3.5 mr-2" /> Split Block
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => mergeChunk(chunk.id!)} disabled={index === totalChunks - 1}>
+                            <FoldVertical className="w-3.5 h-3.5 mr-2" /> Merge Down
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => onMoveUp(index)} disabled={index === 0}>
+                            <ArrowUp className="w-3.5 h-3.5 mr-2" /> Move Up
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => onMoveDown(index)} disabled={index === totalChunks - 1}>
+                            <ArrowDown className="w-3.5 h-3.5 mr-2" /> Move Down
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={() => generateAudio(chunk.id!)}>
+                            <RefreshCw className="w-3.5 h-3.5 mr-2" /> Regenerate Audio
+                        </DropdownMenuItem>
+                    </DropdownMenuContent>
+                </DropdownMenu>
+
                 <div className="h-4 w-[1px] bg-border/20" />
                 
-                <button 
-                    onClick={handlePlay} 
-                    disabled={isJitGenerating}
-                    className={cn(
-                        "transition-all hover:scale-110 active:scale-95 disabled:opacity-50",
-                        isPlaying ? "text-primary" : "text-muted-foreground hover:text-primary"
-                    )}
-                >
-                    {isJitGenerating ? (
-                        <Loader2 className="w-9 h-9 animate-spin" />
-                    ) : isPlaying ? (
-                        <PauseCircle className="w-9 h-9" />
-                    ) : (
-                        <PlayCircle className="w-9 h-9" />
-                    )}
-                </button>
+                {chunk.status === 'failed_tts' ? (
+                     <button 
+                        onClick={() => generateAudio(chunk.id!)} 
+                        title="Retry Synthesis"
+                        className="transition-all hover:scale-110 active:scale-95 text-destructive hover:text-destructive/80"
+                    >
+                        <RefreshCw className="w-7 h-7" />
+                    </button>
+                ) : (
+                    <button 
+                        onClick={handlePlay} 
+                        disabled={isJitGenerating}
+                        className={cn(
+                            "transition-all hover:scale-110 active:scale-95 disabled:opacity-50",
+                            isPlaying ? "text-primary" : "text-muted-foreground hover:text-primary"
+                        )}
+                    >
+                        {isJitGenerating ? (
+                            <Loader2 className="w-9 h-9 animate-spin" />
+                        ) : isPlaying ? (
+                            <PauseCircle className="w-9 h-9" />
+                        ) : (
+                            <PlayCircle className="w-9 h-9" />
+                        )}
+                    </button>
+                )}
             </div>
       </div>
     </div>

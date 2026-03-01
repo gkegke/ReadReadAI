@@ -4,15 +4,10 @@ import { cn } from '../../../shared/lib/utils';
 
 interface ProjectProgressMapProps {
     projectId: number;
-    chapterId: number | null;
 }
 
-/**
- * ProjectProgressMap (Epic 3: Story 7)
- * A "Mini-map" heatmap that visualizes the synthesis state of the entire project/chapter.
- */
-export const ProjectProgressMap: React.FC<ProjectProgressMapProps> = ({ projectId, chapterId }) => {
-    const { data: chunks, isLoading } = useProjectChunks(projectId, chapterId);
+export const ProjectProgressMap: React.FC<ProjectProgressMapProps> = ({ projectId }) => {
+    const { data: chunks, isLoading } = useProjectChunks(projectId);
 
     if (isLoading || chunks.length === 0) return null;
 
@@ -25,7 +20,6 @@ export const ProjectProgressMap: React.FC<ProjectProgressMapProps> = ({ projectI
                 </span>
             </div>
             
-            {/* Grid of tiny status indicators */}
             <div className="grid grid-cols-10 gap-1">
                 {chunks.map((chunk, i) => (
                     <div 

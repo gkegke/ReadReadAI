@@ -18,8 +18,8 @@ export const useImportTextMutation = () => {
 
 export const useInsertBlockMutation = () => {
     return useMutation({
-        mutationFn: async ({ text, projectId, chapterId, afterOrderIndex }: { text: string, projectId: number, chapterId: number, afterOrderIndex: number }) => {
-             return ChunkRepository.insertBlock(text, projectId, chapterId, afterOrderIndex);
+        mutationFn: async ({ text, projectId, afterOrderIndex, role }: { text: string, projectId: number, afterOrderIndex: number, role: 'heading'|'paragraph' }) => {
+             return ChunkRepository.insertBlock(text, projectId, afterOrderIndex, role);
         },
         onError: (err) => console.error('[Mutation] Insert Block Failed', err),
     });
@@ -46,8 +46,6 @@ export const useSplitChunkMutation = () => {
         onError: (err) => console.error('[Mutation] Split Chunk Failed', err),
     });
 };
-
-// --- [EPIC 3: ERGONOMICS MUTATIONS] ---
 
 export const useMergeChunkMutation = () => {
     return useMutation({

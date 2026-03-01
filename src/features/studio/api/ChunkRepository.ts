@@ -8,10 +8,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         super(db.chunks, ChunkSchema);
     }
 
-    /**
-     * [IMPORTANCE: 9/10] Normalizes arrays to remove gaps left by merges or deletions.
-     * Guarantees `getNext` gapless playback calculation is never broken by sparse arrays.
-     */
     private async normalizeProjectOrders(projectId: number): Promise<void> {
         const chunks = await db.chunks.where('projectId').equals(projectId).sortBy('orderInProject');
         const updates = [];
@@ -65,8 +61,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             .equals([chunkA.projectId, chunkA.orderInProject + 1])
             .first();
 
-        // Safety: Only merge if adjacent chunk exists and is in the same chapter
-        if (!chunkB || chunkB.chapterId !== chunkA.chapterId) return;
+        if (!chunkB) return;
 
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
             const newText = `${chunkA.textContent} ${chunkB.textContent}`.trim();
@@ -86,7 +81,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         });
     }
 
-    async insertBlock(text: string, projectId: number, chapterId: number, afterOrderIndex: number): Promise<void> {
+    async insertBlock(text: string, projectId: number, afterOrderIndex: number, role: 'heading' | 'paragraph' = 'paragraph'): Promise<void> {
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
             await db.chunks
                 .where('projectId').equals(projectId)
@@ -95,7 +90,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             const newChunkId = await this.add({
                 projectId,
-                chapterId,
+                role,
                 orderInProject: afterOrderIndex + 1,
                 textContent: text,
                 cleanTextHash: hashText(text),
@@ -108,10 +103,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         });
     }
 
-    /**
-     * [CRITICAL: INTEGRITY FIX] Explicitly swaps two chunks to prevent absolute 
-     * project index corruption when reordering inside a filtered chapter view.
-     */
     async swapChunks(chunkId1: number, chunkId2: number): Promise<void> {
         await db.transaction('rw', [db.chunks], async () => {
             const c1 = await this.get(chunkId1);
@@ -123,9 +114,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         });
     }
 
-    /**
-     * @deprecated Use `swapChunks` for UX operations. Mass-reordering subset arrays causes index collisions.
-     */
     async reorder(projectId: number, chunkIds: number[]): Promise<void> {
         await db.transaction('rw', [db.chunks], async () => {
             const updates = chunkIds.map((id, index) => 
@@ -169,7 +157,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             const newChunkId = await this.add({
                 projectId: chunk.projectId,
-                chapterId: chunk.chapterId,
+                role: 'paragraph', // Splitting a chunk always results in a paragraph continuation
                 orderInProject: chunk.orderInProject + 1,
                 textContent: secondPart,
                 cleanTextHash: hashText(secondPart),

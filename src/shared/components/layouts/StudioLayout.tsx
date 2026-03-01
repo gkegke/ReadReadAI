@@ -2,21 +2,13 @@ import React from 'react';
 import { Outlet } from '@tanstack/react-router';
 import { StudioHeader } from '../../../features/studio/components/StudioHeader';
 import { PlayerControls } from '../../../features/studio/components/PlayerControls';
-import { ChapterOutline } from '../../../features/studio/components/ChapterOutline';
+import { ProjectInspector } from '../../../features/studio/components/ProjectInspector';
 import { AppErrorBoundary } from '../AppErrorBoundary';
 import { usePlaybackEngine } from '../../../features/studio/hooks/usePlaybackEngine';
 import { useKeyboardShortcuts } from '../../../features/studio/hooks/useKeyboardShortcuts';
 
-/**
- * [ARCHITECTURE] StudioLayout (General User Edition)
- * topology: Header + Canvas + Outline.
- * Removed: Hidden Command Layers.
- */
 export const StudioLayout: React.FC = () => {
-  // Activate the "DJ" lookahead engine
   usePlaybackEngine();
-
-  // Activate Playback Shortcuts (Space/J/K)
   useKeyboardShortcuts();
 
   return (
@@ -32,8 +24,8 @@ export const StudioLayout: React.FC = () => {
           </AppErrorBoundary>
         </main>
 
-        <AppErrorBoundary name="ChapterOutline">
-          <ChapterOutline />
+        <AppErrorBoundary name="ProjectInspector">
+          <ProjectInspector />
         </AppErrorBoundary>
       </div>
 

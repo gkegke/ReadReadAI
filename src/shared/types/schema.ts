@@ -14,20 +14,13 @@ export const ProjectSchema = z.object({
   updatedAt: z.date(),
 });
 
-export const ChapterSchema = z.object({
-  id: z.number().optional(),
-  projectId: z.number(),
-  name: z.string().min(1, "Chapter name is required"),
-  orderInProject: z.number(),
-  createdAt: z.date(),
-});
-
 export const ChunkStatusSchema = z.enum(['pending', 'processing', 'generated', 'failed_tts']);
+export const ChunkRoleSchema = z.enum(['heading', 'paragraph']);
 
 export const ChunkSchema = z.object({
   id: z.number().optional(),
   projectId: z.number(),
-  chapterId: z.number(), // [CRITICAL: EPIC 2] Required. Enforces strict hierarchy.
+  role: ChunkRoleSchema.default('paragraph'),
   orderInProject: z.number(),
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),
@@ -57,11 +50,13 @@ export const JobSchema = z.object({
 export const IngestWorkerSchema = {
     processFile: z.object({
         file: z.instanceof(File),
-        projectId: z.number()
+        projectId: z.number(),
+        afterOrderIndex: z.number().optional() // [Added Epic 4: Mid-project insertion]
     }),
     processText: z.object({
         text: z.string(),
-        projectId: z.number()
+        projectId: z.number(),
+        afterOrderIndex: z.number().optional() // [Added Epic 4: Mid-project insertion]
     })
 };
 
@@ -94,7 +89,7 @@ export const LogSchema = z.object({
 
 export type VoiceSettings = z.infer<typeof VoiceSettingsSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
-export type Chapter = z.infer<typeof ChapterSchema>;
+export type ChunkRole = z.infer<typeof ChunkRoleSchema>;
 export type Chunk = z.infer<typeof ChunkSchema>;
 export type ChunkStatus = z.infer<typeof ChunkStatusSchema>;
 export type Job = z.infer<typeof JobSchema>;

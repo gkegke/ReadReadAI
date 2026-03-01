@@ -2,30 +2,34 @@ import { create } from 'zustand';
 
 interface ProjectState {
   activeProjectId: number | null;
-  activeChapterId: number | null;
+  scrollToChunkId: number | null; 
   isExporting: boolean;
-  selectedChunkIds: number[]; // [EPIC 3] Multi-select array
+  selectedChunkIds: number[]; 
+  isSelectionMode: boolean; // [Epic 3] Toggles safe bulk-selection UX
   
   setActiveProject: (id: number | null) => void;
-  setActiveChapter: (id: number | null) => void;
+  setScrollToChunkId: (id: number | null) => void;
   setExporting: (isExporting: boolean) => void;
   toggleChunkSelection: (id: number) => void;
+  setSelectionMode: (isActive: boolean) => void;
   clearSelection: () => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
   activeProjectId: null,
-  activeChapterId: null,
+  scrollToChunkId: null,
   isExporting: false,
   selectedChunkIds: [],
+  isSelectionMode: false,
 
   setActiveProject: (id) => set({ 
     activeProjectId: id,
-    activeChapterId: null,
-    selectedChunkIds: [] // Clean up selection when pivoting contexts
+    scrollToChunkId: null,
+    selectedChunkIds: [],
+    isSelectionMode: false
   }),
 
-  setActiveChapter: (id) => set({ activeChapterId: id }),
+  setScrollToChunkId: (id) => set({ scrollToChunkId: id }),
 
   setExporting: (isExporting) => set({ isExporting }),
 
@@ -35,5 +39,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
         : [...state.selectedChunkIds, id]
   })),
 
-  clearSelection: () => set({ selectedChunkIds: [] }),
+  setSelectionMode: (isActive) => set({ 
+      isSelectionMode: isActive,
+      // Auto-clear selection if we are exiting selection mode
+      selectedChunkIds: isActive ? [] : []
+  }),
+
+  clearSelection: () => set({ selectedChunkIds: [], isSelectionMode: false }),
 }));

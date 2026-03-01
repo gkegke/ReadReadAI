@@ -2,14 +2,13 @@ import React, { useEffect } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { Timeline } from '../components/Timeline';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
-import { projectRoute } from '../../../app/router'; // [IMPORT: Type-safe route]
+import { projectRoute } from '../../../app/router';
 
 /**
  * StudioPage
- * The main canvas for audio synthesis and editing.
+ * Corrected the named import of Timeline to match the updated export.
  */
 export const StudioPage: React.FC = () => {
-    // [FIX] Reference the route object directly to satisfy TanStack Router's invariant
     const { projectId } = useParams({ from: projectRoute.id });
     const { setActiveProject } = useProjectStore();
     
@@ -19,7 +18,6 @@ export const StudioPage: React.FC = () => {
             setActiveProject(id);
         }
         
-        // [CLEANUP] Ensure system state is reset when leaving the Studio
         return () => {
             setActiveProject(null);
         };

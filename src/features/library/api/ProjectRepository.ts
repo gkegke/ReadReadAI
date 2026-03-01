@@ -31,17 +31,10 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
     }
 
     async deleteProject(id: number): Promise<void> {
-        // [EPIC 1] Comprehensive cleanup of file system artifacts
-        const chunks = await db.chunks.where('projectId').equals(id).toArray();
-        const hashes = chunks.map(c => c.cleanTextHash).filter(Boolean);
-
-        await db.transaction('rw', [db.projects, db.chapters, db.chunks, db.jobs, db.audioCache], async () => {
+        await db.transaction('rw', [db.projects, db.chunks, db.jobs, db.audioCache], async () => {
             await this.delete(id);
-            await db.chapters.where('projectId').equals(id).delete();
             await db.chunks.where('projectId').equals(id).delete();
             await db.jobs.where('projectId').equals(id).delete();
-            // Optional: Keep audioCache if other projects share these hashes, 
-            // but for safety we leave it to the Reconciler Worker.
         });
 
         if (useProjectStore.getState().activeProjectId === id) {
@@ -49,15 +42,11 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         }
     }
 
-    /**
-     * [PHASE 3] Refactored to let Worker handle DB writes.
-     */
-    async importDocument(file: File, targetProjectId?: number): Promise<void> {
+    async importDocument(file: File, targetProjectId?: number, afterOrderIndex?: number): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
         if (!projectId) throw new Error("No active project");
         
-        // Import worker now writes directly to DB
-        const result = await importService.importFile(file, projectId);
+        const result = await importService.importFile(file, projectId, afterOrderIndex);
         
         await this.update(projectId, { 
             sourceFileName: result.fileName, 
@@ -65,11 +54,11 @@ class ProjectRepositoryImpl extends SharedBaseRepository<Project, typeof Project
         });
     }
 
-    async importRawText(text: string, targetProjectId?: number): Promise<void> {
+    async importRawText(text: string, targetProjectId?: number, afterOrderIndex?: number): Promise<void> {
         const projectId = targetProjectId || useProjectStore.getState().activeProjectId;
         if (!projectId) return;
 
-        await importService.importText(text, projectId);
+        await importService.importText(text, projectId, afterOrderIndex);
         await this.update(projectId, { updatedAt: new Date() });
     }
 
