@@ -6,7 +6,7 @@ import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
 
 export const PlayerControls: React.FC = () => {
-  const { isPlaying, togglePlay, activeChunkId, setActiveChunkId, playbackSpeed, setPlaybackSpeed, currentTime, duration } = useAudioStore();
+  const { isPlaying, togglePlay, activeChunkId, skipToChunk, playbackSpeed, setPlaybackSpeed, currentTime, duration } = useAudioStore();
   const { activeProjectId } = useProjectStore();
   
   const { data: chunkIds } = useProjectChunkIds(activeProjectId);
@@ -17,8 +17,9 @@ export const PlayerControls: React.FC = () => {
   const hasPrev = currentChunkIndex > 0;
   const hasNext = currentChunkIndex < chunkIds.length - 1;
 
-  const handlePrev = () => { if (hasPrev) setActiveChunkId(chunkIds[currentChunkIndex - 1]); };
-  const handleNext = () => { if (hasNext) setActiveChunkId(chunkIds[currentChunkIndex + 1]); };
+  // [FIX: ISSUE 1] Use skipToChunk instead of raw ID setting
+  const handlePrev = () => { if (hasPrev) skipToChunk(chunkIds[currentChunkIndex - 1]); };
+  const handleNext = () => { if (hasNext) skipToChunk(chunkIds[currentChunkIndex + 1]); };
   
   const toggleSpeed = () => {
       const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
@@ -38,7 +39,6 @@ export const PlayerControls: React.FC = () => {
           <div className="flex flex-col min-w-[140px]">
               <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">Timeline</span>
               <span className="text-xs font-bold truncate opacity-80">
-                  {/* [EPIC 5] Label Standardization */}
                   {activeChunkId ? `Chunk ${currentChunkIndex + 1} of ${chunkIds.length}` : 'Select a chunk'}
               </span>
           </div>

@@ -1,6 +1,4 @@
-/**
- * [CRITICAL: REFACTOR] AudioPlaybackService (XState 5 Refactor)
- */
+// [FILE: /web/src/features/studio/services/AudioPlaybackService.ts]
 import { createMachine, createActor, assign, fromPromise, type Actor } from 'xstate';
 import { logger } from '../../../shared/services/Logger';
 import workletUrl from '../workers/audio-processor.ts?url';
@@ -105,7 +103,11 @@ const playbackMachine = createMachine({
                     target: PlaybackState.BUFFERING,
                     actions: 'assignPlayData'
                 },
-                STOP: { target: PlaybackState.IDLE },
+                // [CRITICAL FIX] Explicitly silence hardware on STOP
+                STOP: { 
+                    target: PlaybackState.IDLE, 
+                    actions: ['stopAudio', assign({ activeChunkId: null })] 
+                },
                 ENDED: { target: PlaybackState.IDLE },
                 CLEAR_CACHE: { actions: 'clearBuffers' }
             }
@@ -118,7 +120,10 @@ const playbackMachine = createMachine({
                     target: PlaybackState.BUFFERING,
                     actions: 'assignPlayData'
                 },
-                STOP: { target: PlaybackState.IDLE },
+                STOP: { 
+                    target: PlaybackState.IDLE,
+                    actions: ['stopAudio', assign({ activeChunkId: null })]
+                },
                 CLEAR_CACHE: { actions: 'clearBuffers' }
             }
         },
@@ -156,8 +161,16 @@ export class AudioPlaybackService {
                     context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: false });
                 },
                 suspendAudio: ({ context }) => {
-                    context.ctx?.suspend();
                     context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
+                },
+                /**
+                 * [FIX: ISSUE 1] stopAudio
+                 * Forces the AudioWorklet to dump its internal PCM buffer immediately.
+                 */
+                stopAudio: ({ context }) => {
+                    context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
+                    context.workletNode?.port.postMessage({ type: 'CLEAR' });
+                    context.ctx?.suspend();
                 },
                 clearBuffers: assign({
                     bufferCache: () => new Map()
@@ -251,10 +264,6 @@ export class AudioPlaybackService {
         }
     }
 
-    /**
-     * [ISSUE 2 FIX] Explicitly clear decoded buffers. 
-     * Essential when voices change for the same chunk ID.
-     */
     public clearBufferCache() {
         this.actor.send({ type: 'CLEAR_CACHE' });
     }

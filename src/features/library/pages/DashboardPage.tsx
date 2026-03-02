@@ -20,9 +20,6 @@ export const DashboardPage: React.FC = () => {
         navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
     };
 
-    /**
-     * [UX-PHASE-1] Frictionless Ingestion Handlers
-     */
     const handleDragEnter = (e: React.DragEvent) => {
         e.preventDefault();
         setDragCounter(prev => prev + 1);
@@ -41,16 +38,16 @@ export const DashboardPage: React.FC = () => {
         e.preventDefault();
     };
 
-    // Unified import routine to prevent Zustand race conditions
     const processFileImport = async (file: File) => {
         try {
             setImportProgress({ active: true, percent: 0, text: 'Initializing...' });
             const projectName = file.name.replace(/\.[^/.]+$/, "") || "Imported Document";
-            const id = await ProjectRepository.createProject(projectName);
+            
+            // [FIX: ISSUE 2] Explicitly skip scaffolding because we are about to import a document
+            const id = await ProjectRepository.createProject(projectName, true);
+            
             useProjectStore.getState().setActiveProject(id);
             
-            // Explicitly pass ID to guarantee it assigns to the freshly minted project
-            // [EPIC 2] Pipeline UI progress event linkage
             await ProjectRepository.importDocument(file, id, undefined, (percent, text) => {
                 setImportProgress({ active: true, percent, text });
             });
@@ -77,10 +74,9 @@ export const DashboardPage: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
         await processFileImport(file);
-        e.target.value = ''; // Reset input to allow re-selection
+        e.target.value = ''; 
     };
 
-    // [UX-PHASE-2] Global Deletion Flow
     const handleDeleteProject = async (e: React.MouseEvent, id: number, name: string) => {
         e.preventDefault();
         e.stopPropagation();
@@ -107,7 +103,6 @@ export const DashboardPage: React.FC = () => {
                 </div>
             )}
 
-            {/* [EPIC 2] Blocking Progress Overlay to prevent premature interaction */}
             {importProgress.active && (
                 <div className="absolute inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm m-4 rounded-3xl animate-in fade-in">
                     <div className="text-center space-y-4">
