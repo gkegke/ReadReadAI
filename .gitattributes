@@ -1,0 +1,2 @@
+web/public/tts-models/**/*.onnx filter=lfs diff=lfs merge=lfs -text
+web/public/**/*.wasm filter=lfs diff=lfs merge=lfs -text
