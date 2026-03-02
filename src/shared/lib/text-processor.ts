@@ -5,35 +5,35 @@ import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
  * Focused on Prosody-First chunking for TTS using LangChain.
  */
 
-export function hashText(str: string): string {
+/**
+ * [CRITICAL: ISSUE 2 FIX] Hash generation now optionally accepts a voice identifier.
+ * This ensures that the same text with a different voice produces a different 
+ * cache key, preventing incorrect audio playback after voice settings change.
+ */
+export function hashText(str: string, voiceId?: string): string {
+  let combined = voiceId ? `${voiceId}:${str}` : str;
   let hash = 5381;
-  for (let i = 0; i < str.length; i++) {
-    hash = ((hash << 5) + hash) + str.charCodeAt(i);
+  for (let i = 0; i < combined.length; i++) {
+    hash = ((hash << 5) + hash) + combined.charCodeAt(i);
   }
   return (hash >>> 0).toString(16);
 }
 
 /**
  * Semantic Chunking Strategy
- * Uses RecursiveCharacterTextSplitter to handle hierarchy (Paragraph -> Sentence -> Clause).
- * This ensures chunks end at "Breath Groups," avoiding mechanical cadence.
  */
-// [CRITICAL FIX] Decreased max chunk size to 400 to prevent exceeding the 512 token
-// sequence length limits typical of edge/web ONNX models.
 export async function chunkText(text: string, maxChunkSize = 400): Promise<string[]> {
     const normalized = text.replace(/\r\n/g, '\n').trim();
     if (!normalized) return [];
 
-    // Industry standard splitter configuration
     const splitter = new RecursiveCharacterTextSplitter({
         chunkSize: maxChunkSize,
-        chunkOverlap: 0, // No overlap for TTS to prevent repeat reading
+        chunkOverlap: 0,
         separators: ["\n\n", "\n", ".", "?", "!", ";", ",", " ", ""],
     });
 
     const output = await splitter.createDocuments([normalized]);
     
-    // Clean up results and filter out empty strings
     return output
         .map(doc => doc.pageContent.trim())
         .filter(content => content.length > 0);

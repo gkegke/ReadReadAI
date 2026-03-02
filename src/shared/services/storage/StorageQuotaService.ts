@@ -1,20 +1,22 @@
 import { storage } from './index';
 import { db } from '../../db';
 import { logger } from '../Logger';
+import { useSystemStore } from '../../store/useSystemStore';
 
 /**
- * StorageQuotaService (Epic 1 & Epic 4: The Garbage Collector)
+ * StorageQuotaService
+ * [CRITICAL] Manages the lifecycle of physical files in OPFS.
+ * Ensures that IndexedDB records and physical WAV files stay in sync.
  */
 export const StorageQuotaService = {
     /**
-     * [EPIC 4] Non-blocking OPFS sweeper.
-     * [FIX] Uses db.table() accessor to prevent "undefined" errors if Dexie
-     * property injection is delayed during schema upgrades.
+     * processOrphanQueue
+     * [EPIC 4] Background Garbage Collector.
+     * Deletes files listed in the 'orphanedFiles' table during idle time.
      */
     async processOrphanQueue() {
         const processBatch = async () => {
             try {
-                // Defensive check: Ensure orphanedFiles exists in the schema
                 const table = db.table('orphanedFiles');
                 if (!table) return;
 
@@ -24,13 +26,11 @@ export const StorageQuotaService = {
                 let deletedCount = 0;
                 for (const orphan of orphans) {
                     try {
-                        // Check if file exists before attempting delete to avoid noise
                         if (await storage.exists(orphan.path)) {
                             await storage.deleteFile(orphan.path);
                         }
                     } catch (e) {
-                        // Log but continue; file might already be gone
-                        logger.debug('Storage', `GC: File ${orphan.path} skip.`, e);
+                        // Silent skip if file is already gone or locked
                     }
                     await table.delete(orphan.id);
                     deletedCount++;
@@ -40,7 +40,6 @@ export const StorageQuotaService = {
                     logger.debug('Storage', `Background GC purged ${deletedCount} orphaned files.`);
                 }
 
-                // If we found 10, there are likely more. Queue another idle block.
                 if (orphans.length === 10) {
                     this.queueNextBatch();
                 }
@@ -56,9 +55,6 @@ export const StorageQuotaService = {
         }
     },
 
-    /**
-     * Helper to re-queue the next batch safely
-     */
     queueNextBatch() {
         if (typeof requestIdleCallback !== 'undefined') {
             requestIdleCallback(() => this.processOrphanQueue());
@@ -68,7 +64,9 @@ export const StorageQuotaService = {
     },
 
     /**
-     * [EPIC 1] Boot-time reconciliation.
+     * reconcileStorage
+     * [EPIC 1] Syncs OPFS with the Database.
+     * Deletes physical files that no longer have a reference in IndexedDB.
      */
     async reconcileStorage() {
         try {
@@ -86,30 +84,68 @@ export const StorageQuotaService = {
             }
 
             if (purgeCount > 0) {
-                logger.info('Storage', `Cleaned ${purgeCount} orphaned audio files.`);
+                logger.info('Storage', `Cleaned ${purgeCount} orphaned audio files from disk.`);
             }
         } catch (e) {
             logger.error('Storage', 'Reconciliation failed', e);
         }
     },
 
+    /**
+     * checkAndPurge
+     * [EPIC 6] Evaluates browser storage quota.
+     * Sets a global state if the device is running out of space.
+     */
     async checkAndPurge() {
         if (!navigator.storage?.estimate) return;
         
         const { usage, quota } = await navigator.storage.estimate();
         if (!usage || !quota) return;
 
-        if (usage / quota > 0.85) {
-            logger.warn('Storage', 'Quota threshold reached. Purging LRU cache...');
-            const lru = await db.audioCache.orderBy('lastAccessedAt').limit(50).toArray();
-            
-            for (const record of lru) {
-                await storage.deleteFile(record.path);
-                await db.audioCache.delete(record.hash);
-            }
+        const ratio = usage / quota;
+        const isFull = ratio > 0.90; // Threshold 90%
+        
+        useSystemStore.getState().setIsStorageFull(isFull);
+
+        if (isFull) {
+            logger.warn('Storage', `Quota threshold reached (${(ratio*100).toFixed(1)}%). Generation paused.`);
         }
     },
 
+    /**
+     * purgeOldestAudio
+     * [EPIC 6] Manual cache invalidation trigger.
+     * Deletes the 50 oldest audio files to free up space.
+     */
+    async purgeOldestAudio() {
+        logger.info('Storage', 'Manual purge initiated...');
+        
+        const oldest = await db.audioCache.orderBy('lastAccessedAt').limit(50).toArray();
+        if (oldest.length === 0) return;
+
+        for (const record of oldest) {
+            try {
+                await storage.deleteFile(record.path);
+                await db.audioCache.delete(record.hash);
+                
+                // Reset associated chunks to pending so UI reflects they need regeneration
+                await db.chunks.where('cleanTextHash').equals(record.hash).modify({
+                    status: 'pending',
+                    generatedFilePath: null
+                });
+            } catch (e) {
+                logger.warn('Storage', `Failed to delete ${record.path} during purge`, e);
+            }
+        }
+        
+        logger.info('Storage', `Manual purge completed. Freed ${oldest.length} slots.`);
+        await this.checkAndPurge(); 
+    },
+
+    /**
+     * touch
+     * Updates LRU timestamp for a specific audio asset.
+     */
     async touch(hash: string) {
         await db.audioCache.update(hash, { lastAccessedAt: new Date() });
     }

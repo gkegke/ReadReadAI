@@ -33,7 +33,7 @@ interface ChunkItemProps {
 }
 
 export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, onMoveDown }: ChunkItemProps) => {
-  const { playbackState, setActiveChunkId } = useAudioStore();
+  const { playbackState, setActiveChunkId, togglePlay } = useAudioStore();
   const { selectedChunkIds, toggleChunkSelection, isSelectionMode } = useProjectStore();
   
   const currentTime = useAudioStore(state => state.activeChunkId === chunk.id ? state.currentTime : 0);
@@ -109,48 +109,30 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
       });
   };
 
-  const handlePlay = async () => {
-      if (isActive) {
-          playback.toggle();
+    const handlePlay = async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      
+      if (isActive && playbackState !== PlaybackState.IDLE) {
+          togglePlay();
           return;
       }
 
       setActiveChunkId(chunk.id!);
 
-      const attemptPlayback = async (filePath: string) => {
-          const blob = audioBlob || await storage.readFile(filePath);
-          playback.playChunk(chunk.id!, blob);
-      };
-
-      if (chunk.status !== 'generated' || !chunk.generatedFilePath) {
-          try {
-              setIsJitGenerating(true);
+      try {
+          if (chunk.status !== 'generated' || !chunk.generatedFilePath) {
               await generateAudio(chunk.id!);
-              
-              const freshChunk = await ChunkRepository.get(chunk.id!);
-              if (freshChunk?.generatedFilePath) {
-                  await attemptPlayback(freshChunk.generatedFilePath);
-              }
-          } catch (err) {
-              logger.error('ChunkItem', 'JIT Playback failed', err);
-          } finally {
-              setIsJitGenerating(false);
           }
-      } else {
-          try {
-              await attemptPlayback(chunk.generatedFilePath);
-          } catch(e) {
-              setIsJitGenerating(true);
-              try {
-                  await generateAudio(chunk.id!);
-                  const freshChunk = await ChunkRepository.get(chunk.id!);
-                  if (freshChunk?.generatedFilePath) await attemptPlayback(freshChunk.generatedFilePath);
-              } catch (regenErr) {
-                  logger.error('ChunkItem', 'Healing regeneration failed', regenErr);
-              } finally {
-                  setIsJitGenerating(false);
-              }
+          
+          const fresh = await ChunkRepository.get(chunk.id!);
+          if (fresh?.generatedFilePath) {
+              const blob = await storage.readFile(fresh.generatedFilePath);
+              // [CRITICAL: FIXED] Used the 'playback' service instance from useServices() 
+              // instead of the undefined 'audioPlaybackService' reference.
+              playback.playChunk(chunk.id!, blob);
           }
+      } catch (err) {
+          logger.error('ChunkItem', 'Manual playback trigger failed', err);
       }
   };
 

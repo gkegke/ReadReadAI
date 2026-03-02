@@ -8,15 +8,12 @@ import {
 } from '../../../shared/components/ui/dialog';
 import { Button } from '../../../shared/components/ui/button';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { Settings, Eye, Type, AlignLeft, Info, Trash2 } from 'lucide-react';
+import { Settings, Eye, Type, AlignLeft, Info, Trash2, HardDrive } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
+import { StorageQuotaService } from '../../../shared/services/storage/StorageQuotaService';
 
-/**
- * SettingsMenu (Epic 3 & Phase 2)
- * Centralized control for Studio ergonomics and UX preferences + Danger Zone functions.
- */
 export const SettingsMenu: React.FC = () => {
     const { isZenMode, setIsZenMode } = useSystemStore();
     const { activeProjectId } = useProjectStore();
@@ -27,6 +24,12 @@ export const SettingsMenu: React.FC = () => {
         if (window.confirm("Are you sure you want to permanently delete this project? This action cannot be undone.")) {
             await ProjectRepository.deleteProject(activeProjectId);
             navigate({ to: '/' });
+        }
+    };
+
+    const handlePurgeAudio = async () => {
+        if (window.confirm("This will securely delete older audio cache files across all projects to free up space. They will be regenerated automatically when played. Continue?")) {
+            await StorageQuotaService.purgeOldestAudio();
         }
     };
 
@@ -46,7 +49,6 @@ export const SettingsMenu: React.FC = () => {
                 </DialogHeader>
                 
                 <div className="space-y-6 py-4">
-                    {/* Active Feature: Zen Mode */}
                     <div className="flex items-center justify-between">
                         <div className="space-y-0.5">
                             <div className="flex items-center gap-2">
@@ -65,7 +67,6 @@ export const SettingsMenu: React.FC = () => {
 
                     <div className="h-[1px] bg-border" />
 
-                    {/* Placeholder Features (Epic 3 Roadmap) */}
                     <div className="space-y-4 opacity-40 grayscale pointer-events-none">
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -90,7 +91,23 @@ export const SettingsMenu: React.FC = () => {
                         </p>
                     </div>
 
-                    {/* [UX-PHASE-2] Danger Zone */}
+                    <div className="h-[1px] bg-border" />
+                    
+                    {/* [EPIC 6] Explicit Data Purge Trigger */}
+                    <div className="space-y-3">
+                        <div className="flex items-center gap-2">
+                            <HardDrive className="w-4 h-4 text-amber-500" />
+                            <span className="text-sm font-bold uppercase tracking-tight text-amber-500">Storage Management</span>
+                        </div>
+                        <Button 
+                            variant="outline" 
+                            className="w-full text-xs font-bold tracking-widest uppercase border-amber-500/50 text-amber-500 hover:bg-amber-500/10" 
+                            onClick={handlePurgeAudio}
+                        >
+                            Purge Old Audio
+                        </Button>
+                    </div>
+
                     <div className="h-[1px] bg-border" />
                     
                     <div className="space-y-3">

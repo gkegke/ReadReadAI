@@ -77,3 +77,11 @@ export const useQueueMissingChunksMutation = () => {
         onError: (err) => console.error('[Mutation] Queue Missing Failed', err),
     });
 };
+
+// [EPIC 2] Clear Project Audio
+export const useClearProjectAudioMutation = () => {
+    return useMutation({
+        mutationFn: (projectId: number) => ChunkRepository.clearProjectAudio(projectId),
+        onError: (err) => console.error('[Mutation] Clear Audio Failed', err),
+    });
+};

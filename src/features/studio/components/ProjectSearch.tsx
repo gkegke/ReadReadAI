@@ -11,11 +11,6 @@ import {
 import { cn } from '../../../shared/lib/utils';
 import { logger } from '../../../shared/services/Logger';
 
-/**
- * ProjectSearch (V2.1 - Navigation Polish)
- * [UX] Accessible search interface that replaces the hidden Cmd+K palette.
- * Updated to solely handle navigation (scrolling) rather than forcing playback.
- */
 export const ProjectSearch: React.FC = () => {
     const { activeProjectId, setScrollToChunkId } = useProjectStore();
     const { data: chunks } = useProjectChunks(activeProjectId);
@@ -31,7 +26,7 @@ export const ProjectSearch: React.FC = () => {
 
     const handleSelect = (chunkId: number) => {
         logger.info('ProjectSearch', 'User navigated to chunk via search', { chunkId });
-        setScrollToChunkId(chunkId); // Safely scroll without triggering TTS playback
+        setScrollToChunkId(chunkId); 
         setIsOpen(false);
         setQuery('');
     };
@@ -65,8 +60,8 @@ export const ProjectSearch: React.FC = () => {
             <PopoverContent 
                 side="bottom" 
                 align="start" 
-                className="w-[320px] p-1 bg-background/95 backdrop-blur-xl border-border shadow-2xl"
-                onOpenAutoFocus={(e) => e.preventDefault()} // Keep focus on the input
+                className="w-[320px] p-1 bg-background border-border shadow-2xl z-[100]"
+                onOpenAutoFocus={(e) => e.preventDefault()} 
             >
                 {filteredChunks.length === 0 ? (
                     <div className="py-8 text-center">

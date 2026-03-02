@@ -4,6 +4,7 @@ import { BaseRepository } from '../../../shared/api/BaseRepository';
 import { hashText, chunkText } from '../../../shared/lib/text-processor';
 import { StorageQuotaService } from '../../../shared/services/storage/StorageQuotaService';
 import { logger } from '../../../shared/services/Logger';
+import { audioPlaybackService } from '../services/AudioPlaybackService';
 
 class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     constructor() {
@@ -62,9 +63,37 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     }
 
     /**
-     * [FEATURE] Auto-generation Sweeper.
-     * Sweeps from a target index onwards and queues generation jobs for missing files.
+     * [ISSUE 2 FIX] Complete Audio Invalidation Routine
+     * Now also clears the playback service's internal buffer cache.
      */
+    async clearProjectAudio(projectId: number): Promise<void> {
+        // Purge memory cache immediately
+        audioPlaybackService.clearBufferCache();
+
+        await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+            const chunks = await db.chunks.where('projectId').equals(projectId).toArray();
+            const orphanTable = db.table('orphanedFiles');
+
+            for (const chunk of chunks) {
+                if (chunk.generatedFilePath) {
+                    await orphanTable.add({ path: chunk.generatedFilePath, createdAt: new Date() });
+                    await db.audioCache.delete(chunk.cleanTextHash);
+                }
+                
+                await db.chunks.update(chunk.id!, {
+                    status: 'pending',
+                    generatedFilePath: null,
+                    updatedAt: new Date()
+                });
+            }
+            
+            await db.jobs.where('projectId').equals(projectId).delete();
+        });
+        
+        StorageQuotaService.processOrphanQueue();
+        logger.info('ChunkRepository', `Cleared all audio and memory buffers for project ${projectId}`);
+    }
+
     async queueMissing(projectId: number, fromOrderIndex: number = 0): Promise<void> {
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
             const chunks = await db.chunks
@@ -83,6 +112,10 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         const subChunks = await chunkText(text);
         if (subChunks.length === 0) return;
 
+        // Get project to include voice in initial hash
+        const project = await db.projects.get(projectId);
+        const voiceId = project?.voiceSettings?.voiceId;
+
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
             await db.chunks
                 .where('projectId').equals(projectId)
@@ -98,7 +131,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                     role: currentOrder === afterOrderIndex + 1 ? role : 'paragraph',
                     orderInProject: currentOrder++,
                     textContent: content,
-                    cleanTextHash: hashText(content),
+                    cleanTextHash: hashText(content, voiceId), // [ISSUE 2 FIX]
                     status: 'pending',
                     createdAt: now,
                     updatedAt: now
@@ -113,6 +146,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         const chunk = await this.get(chunkId);
         if (!chunk) return;
 
+        const project = await db.projects.get(chunk.projectId);
+        const voiceId = project?.voiceSettings?.voiceId;
+
         await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
             if (chunk.generatedFilePath) {
                 await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
@@ -121,7 +157,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             await db.chunks.update(chunkId, {
                 textContent: newText,
-                cleanTextHash: hashText(newText),
+                cleanTextHash: hashText(newText, voiceId), // [ISSUE 2 FIX]
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()
@@ -134,6 +170,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     async splitChunk(chunkId: number, cursorIndex: number): Promise<void> {
         const chunk = await this.get(chunkId);
         if (!chunk || cursorIndex <= 0 || cursorIndex >= chunk.textContent.length) return;
+
+        const project = await db.projects.get(chunk.projectId);
+        const voiceId = project?.voiceSettings?.voiceId;
 
         const firstPart = chunk.textContent.slice(0, cursorIndex).trim();
         const secondPart = chunk.textContent.slice(cursorIndex).trim();
@@ -153,7 +192,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             await db.chunks.update(chunkId, {
                 textContent: firstPart,
-                cleanTextHash: hashText(firstPart),
+                cleanTextHash: hashText(firstPart, voiceId), // [ISSUE 2 FIX]
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()
@@ -165,7 +204,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 role: 'paragraph', 
                 orderInProject: chunk.orderInProject + 1,
                 textContent: secondPart,
-                cleanTextHash: hashText(secondPart),
+                cleanTextHash: hashText(secondPart, voiceId), // [ISSUE 2 FIX]
                 status: 'pending',
                 createdAt: new Date(),
                 updatedAt: new Date()
@@ -179,6 +218,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     async mergeWithNext(chunkId: number): Promise<void> {
         const chunkA = await this.get(chunkId);
         if (!chunkA) return;
+
+        const project = await db.projects.get(chunkA.projectId);
+        const voiceId = project?.voiceSettings?.voiceId;
 
         const chunkB = await db.chunks
             .where('[projectId+orderInProject]')
@@ -202,7 +244,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             
             await db.chunks.update(chunkA.id!, {
                 textContent: newText,
-                cleanTextHash: hashText(newText),
+                cleanTextHash: hashText(newText, voiceId), // [ISSUE 2 FIX]
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()

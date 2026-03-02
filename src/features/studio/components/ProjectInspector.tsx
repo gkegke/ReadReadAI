@@ -8,7 +8,7 @@ import { VoiceSelector } from './VoiceSelector';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
 import { AVAILABLE_MODELS } from '../../../shared/types/tts';
 import { ttsService } from '../../tts/services/TTSService';
-import { useQueueMissingChunksMutation } from '../../../shared/hooks/useMutations';
+import { useQueueMissingChunksMutation, useClearProjectAudioMutation } from '../../../shared/hooks/useMutations';
 import { useServices } from '../../../shared/context/ServiceContext';
 import { 
     Download, 
@@ -18,7 +18,8 @@ import {
     Loader2,
     CheckSquare,
     Square,
-    Zap
+    Zap,
+    Trash2
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../shared/components/ui/select';
 import { Button } from '../../../shared/components/ui/button';
@@ -29,6 +30,7 @@ export const ProjectInspector: React.FC = () => {
     const { activeModelId, setActiveModelId } = useSystemStore();
     
     const { mutate: queueMissing, isPending: isQueueing } = useQueueMissingChunksMutation();
+    const { mutate: clearAudio, isPending: isClearing } = useClearProjectAudioMutation();
     const { queue } = useServices();
 
     const headings = useMemo(() => {
@@ -46,6 +48,12 @@ export const ProjectInspector: React.FC = () => {
         queueMissing({ projectId: activeProjectId }, {
             onSuccess: () => queue.poke()
         });
+    };
+
+    const handleClearAudio = () => {
+        if (window.confirm("Delete all generated audio for this project? You will need to regenerate it afterwards.")) {
+            clearAudio(activeProjectId);
+        }
     };
 
     return (
@@ -100,14 +108,25 @@ export const ProjectInspector: React.FC = () => {
                         </Button>
 
                         <Button 
+                            variant="destructive" 
+                            size="sm" 
+                            onClick={handleClearAudio}
+                            disabled={isClearing}
+                            className="w-full font-black tracking-widest text-[9px] h-8 rounded-md bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground border border-destructive/20"
+                        >
+                            {isClearing ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Trash2 className="w-3 h-3 mr-1.5" />}
+                            CLEAR AUDIO
+                        </Button>
+
+                        <Button 
                             variant="secondary" 
                             size="sm" 
                             onClick={handleGenerateAll}
                             disabled={isQueueing}
-                            className="w-full font-black tracking-widest text-[9px] h-8 rounded-md col-span-2 border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                            className="w-full font-black tracking-widest text-[9px] h-8 rounded-md border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
                         >
                             {isQueueing ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Zap className="w-3 h-3 mr-1.5" fill="currentColor" />}
-                            GENERATE MISSING AUDIO
+                            GENERATE
                         </Button>
                     </div>
                 </div>
