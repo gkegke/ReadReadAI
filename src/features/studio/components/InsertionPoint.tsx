@@ -5,6 +5,7 @@ import { useInsertBlockMutation } from '../../../shared/hooks/useMutations';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
 import { cn } from '../../../shared/lib/utils';
 import { logger } from '../../../shared/services/Logger';
+import { useServices } from '../../../shared/context/ServiceContext';
 
 interface InsertionPointProps {
     projectId: number;
@@ -19,6 +20,7 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({ projectId, after
     
     const { mutate: insertBlock, isPending } = useInsertBlockMutation();
     const fileInputRef = useRef<HTMLInputElement>(null);
+    const { queue } = useServices();
 
     const handleInsertText = () => {
         if (!text.trim()) return;
@@ -26,6 +28,7 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({ projectId, after
             onSuccess: () => {
                 setText('');
                 setIsActive(false);
+                queue.poke();
             }
         });
     };
@@ -36,11 +39,9 @@ export const InsertionPoint: React.FC<InsertionPointProps> = ({ projectId, after
         
         setIsUploading(true);
         try {
-            await ProjectRepository.importDocument(file, projectId, afterOrderIndex, (percent, text) => {
-                 // The progress fires, but since this is mid-document, we just show a generic spinner
-                 // to keep the UX clean.
-            });
+            await ProjectRepository.importDocument(file, projectId, afterOrderIndex, (percent, text) => {});
             setIsActive(false);
+            queue.poke();
         } catch (err) {
             logger.error('InsertionPoint', 'Failed mid-project file insertion', err);
             alert("Failed to insert document.");

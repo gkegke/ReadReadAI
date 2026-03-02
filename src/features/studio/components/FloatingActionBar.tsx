@@ -3,11 +3,13 @@ import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useDeleteChunksMutation, useRegenerateChunksMutation } from '../../../shared/hooks/useMutations';
 import { Button } from '../../../shared/components/ui/button';
 import { Trash2, RefreshCw, X } from 'lucide-react';
+import { useServices } from '../../../shared/context/ServiceContext';
 
 export const FloatingActionBar: React.FC = () => {
     const { activeProjectId, selectedChunkIds, isSelectionMode, clearSelection } = useProjectStore();
     const { mutate: deleteChunks, isPending: isDeleting } = useDeleteChunksMutation();
     const { mutate: regenerateChunks, isPending: isRegenerating } = useRegenerateChunksMutation();
+    const { queue } = useServices();
 
     // Escape hatch for quick UX exit
     useEffect(() => {
@@ -35,7 +37,10 @@ export const FloatingActionBar: React.FC = () => {
     const handleRegenerate = () => {
         if (selectedChunkIds.length === 0) return;
         regenerateChunks({ projectId: activeProjectId, chunkIds: selectedChunkIds }, {
-            onSuccess: () => clearSelection()
+            onSuccess: () => {
+                clearSelection();
+                queue.poke();
+            }
         });
     };
 

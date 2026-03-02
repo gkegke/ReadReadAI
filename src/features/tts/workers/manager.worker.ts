@@ -1,5 +1,5 @@
 import * as Comlink from 'comlink';
-import { createMachine, createActor, assign } from 'xstate';
+import { createMachine, createActor, assign, fromPromise } from 'xstate';
 import { db } from '../../../shared/db';
 import { AudioGenerationService } from '../services/AudioGenerationService';
 import { ttsService } from '../services/TTSService';
@@ -11,21 +11,23 @@ const managerMachine = createMachine({
     context: {
         activeModelId: null as string | null,
         consecutiveErrors: 0,
+        currentJob: null as any
     },
     states: {
         idle: {
             on: {
-                START: { target: 'initializing' },
+                START: { 
+                    target: 'initializing',
+                    actions: assign({ activeModelId: ({ event }) => (event as any).modelId })
+                },
                 POKE: { target: 'checking' }
             }
         },
         initializing: {
             invoke: {
                 src: 'loadModel',
-                onDone: {
-                    target: 'checking',
-                    actions: assign({ activeModelId: ({ event }) => event.output })
-                },
+                input: ({ context }) => ({ modelId: context.activeModelId }),
+                onDone: { target: 'checking' },
                 onError: { target: 'error_cooldown' }
             }
         },
@@ -33,7 +35,11 @@ const managerMachine = createMachine({
             invoke: {
                 src: 'findJob',
                 onDone: [
-                    { target: 'processing', guard: 'hasJob', actions: assign({ currentJob: ({ event }) => event.output }) },
+                    { 
+                        target: 'processing', 
+                        guard: ({ event }) => !!event.output, 
+                        actions: assign({ currentJob: ({ event }) => event.output }) 
+                    },
                     { target: 'sleeping' }
                 ],
                 onError: { target: 'sleeping' }
@@ -42,9 +48,10 @@ const managerMachine = createMachine({
         processing: {
             invoke: {
                 src: 'executeJob',
+                input: ({ context }) => context.currentJob,
                 onDone: { target: 'checking', actions: assign({ consecutiveErrors: 0 }) },
                 onError: { 
-                    target: 'checking', 
+                    target: 'sleeping', // Sleep briefly on error to prevent CPU thrashing loop
                     actions: assign({ consecutiveErrors: ({ context }) => context.consecutiveErrors + 1 }) 
                 }
             }
@@ -58,26 +65,28 @@ const managerMachine = createMachine({
         }
     }
 }, {
-    guards: {
-        hasJob: ({ event }) => !!event.output
-    },
     actors: {
-        loadModel: async ({ event }) => {
-            const { modelId } = event as { modelId: string };
+        loadModel: fromPromise(async ({ input }: any) => {
+            const { modelId } = input;
+            if (!modelId) return null;
             await ttsService.loadModel(modelId);
             return modelId;
-        },
-        findJob: async () => {
+        }),
+        findJob: fromPromise(async () => {
             return await navigator.locks.request('readread-job-orchestrator', { ifAvailable: true }, async (lock) => {
                 if (!lock) return null;
-                return await db.jobs
-                    .where('status').equals('pending')
-                    .reverse().sortBy('priority')
-                    .then(list => list[0]);
+                const jobs = await db.jobs.where('status').equals('pending').toArray();
+                if (jobs.length === 0) return null;
+
+                // Priority sort: Highest priority first, then oldest (lowest ID)
+                jobs.sort((a, b) => b.priority - a.priority || a.id! - b.id!);
+                return jobs[0];
             });
-        },
-        executeJob: async ({ event }) => {
-            const job = event.output;
+        }),
+        executeJob: fromPromise(async ({ input }: any) => {
+            const job = input;
+            if (!job) throw new Error("No job provided");
+            
             const startTime = Date.now();
             const waitTime = startTime - job.createdAt.getTime();
             
@@ -96,9 +105,11 @@ const managerMachine = createMachine({
                 });
             } catch (e) {
                 logger.error('JobQueue', `Job [${job.chunkId}] Failed`, e);
+                // Mark as failed so it drops out of the pending queue and prevents infinite loops
+                await db.jobs.update(job.id!, { status: 'failed', updatedAt: new Date() });
                 throw e; 
             }
-        }
+        })
     }
 });
 

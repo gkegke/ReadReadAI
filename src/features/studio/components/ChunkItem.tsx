@@ -85,7 +85,9 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
 
   const handleSave = () => {
       if (editText !== chunk.textContent) {
-          updateText({ id: chunk.id!, text: editText });
+          updateText({ id: chunk.id!, text: editText }, {
+              onSuccess: () => queue.poke()
+          });
       }
       setIsEditing(false);
   };
@@ -95,7 +97,9 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
       if (isEditing && textareaRef.current) {
           cursor = textareaRef.current.selectionStart;
       }
-      splitChunk({ id: chunk.id!, cursor });
+      splitChunk({ id: chunk.id!, cursor }, {
+          onSuccess: () => queue.poke()
+      });
       setIsEditing(false);
   };
 
@@ -247,7 +251,7 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
                         <DropdownMenuItem onClick={handleSplit}>
                             <SplitSquareVertical className="w-3.5 h-3.5 mr-2" /> Split Block
                         </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => mergeChunk(chunk.id!)} disabled={index === totalChunks - 1}>
+                        <DropdownMenuItem onClick={() => mergeChunk(chunk.id!, { onSuccess: () => queue.poke() })} disabled={index === totalChunks - 1}>
                             <FoldVertical className="w-3.5 h-3.5 mr-2" /> Merge Down
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
