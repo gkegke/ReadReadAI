@@ -42,7 +42,7 @@ export class AudioPlaybackService {
         } as AudioContextData,
         states: {
             [PlaybackState.IDLE]: {
-                entry: ['clearMemory', 'clearPendingPlayData'],
+                entry: ['clearPendingPlayData'], // [FIX] Removed 'clearMemory' so preloaded buffers aren't immediately evicted
                 on: {
                     HYDRATE: { target: PlaybackState.INITIALIZING },
                     PLAY: { 
@@ -217,9 +217,31 @@ export class AudioPlaybackService {
     }
 
     public async hydrate() { this.actor.send({ type: 'HYDRATE' }); }
+    
     public playChunk(chunkId: number, blob: Blob, offset: number = 0) {
         this.actor.send({ type: 'PLAY', chunkId, blob, offset });
     }
+
+    /**
+     * [FIX: Gapless Playback] Exposes a method to pre-decode and stash audio in the buffer cache
+     * so that the instant playChunk is called, the audio is ready in RAM.
+     */
+    public async queueNextChunk(chunkId: number, blob: Blob) {
+        const { ctx, bufferCache } = this.actor.getSnapshot().context;
+        if (!ctx) return;
+        if (bufferCache.has(chunkId)) return;
+        try {
+            if (bufferCache.size > MAX_BUFFER_CACHE) {
+                bufferCache.delete(bufferCache.keys().next().value!);
+            }
+            const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
+            bufferCache.set(chunkId, buffer);
+            logger.debug('PlaybackService', `Pre-buffered chunk ${chunkId}`);
+        } catch (e) {
+            logger.error('PlaybackService', 'Preload decode failed', e);
+        }
+    }
+
     public toggle() { this.actor.send({ type: 'TOGGLE' }); }
     public stop() { this.actor.send({ type: 'STOP' }); }
     public get state(): PlaybackState { return this.actor.getSnapshot().value as PlaybackState; }

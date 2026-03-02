@@ -4,7 +4,7 @@ import { useSystemStore } from '../../../shared/store/useSystemStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { 
     PlayCircle, PauseCircle, Settings2, Loader2, ArrowUp, ArrowDown, 
-    SplitSquareVertical, FoldVertical, CheckSquare, Square, PenTool, RefreshCw
+    SplitSquareVertical, FoldVertical, CheckSquare, Square, PenTool, RefreshCw, FastForward
 } from 'lucide-react';
 import { 
     DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator 
@@ -15,7 +15,8 @@ import {
     useUpdateChunkTextMutation, 
     useGenerateAudioMutation, 
     useSplitChunkMutation,
-    useMergeChunkMutation 
+    useMergeChunkMutation,
+    useQueueMissingChunksMutation
 } from '../../../shared/hooks/useMutations';
 import { ChunkRepository } from '../api/ChunkRepository';
 import { cn } from '../../../shared/lib/utils';
@@ -40,7 +41,7 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
   const progressPercent = duration > 0 ? (currentTime / duration) * 100 : 0;
 
   const { isZenMode } = useSystemStore();
-  const { playback, storage } = useServices();
+  const { playback, storage, queue } = useServices();
   
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [isJitGenerating, setIsJitGenerating] = useState(false);
@@ -48,6 +49,7 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
   const { mutateAsync: generateAudio } = useGenerateAudioMutation();
   const { mutate: splitChunk } = useSplitChunkMutation();
   const { mutate: mergeChunk } = useMergeChunkMutation();
+  const { mutate: queueMissing } = useQueueMissingChunksMutation();
   
   const isGlobalPlaying = playbackState === PlaybackState.PLAYING;
   const isSelected = selectedChunkIds.includes(chunk.id!);
@@ -62,7 +64,6 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
   
   const isHeading = chunk.role === 'heading';
 
-  // [UX] Auto-resize textarea on mount and edit
   useEffect(() => {
       if (isEditing && textareaRef.current) {
           textareaRef.current.style.height = 'auto';
@@ -96,6 +97,12 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
       }
       splitChunk({ id: chunk.id!, cursor });
       setIsEditing(false);
+  };
+
+  const handleQueueFromHere = () => {
+      queueMissing({ projectId: chunk.projectId, fromOrderIndex: chunk.orderInProject }, {
+          onSuccess: () => queue.poke()
+      });
   };
 
   const handlePlay = async () => {
@@ -251,6 +258,9 @@ export const ChunkItem = memo(({ chunk, isActive, index, totalChunks, onMoveUp, 
                             <ArrowDown className="w-3.5 h-3.5 mr-2" /> Move Down
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
+                        <DropdownMenuItem onClick={handleQueueFromHere}>
+                            <FastForward className="w-3.5 h-3.5 mr-2 text-primary" /> Generate from Here
+                        </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => generateAudio(chunk.id!)}>
                             <RefreshCw className="w-3.5 h-3.5 mr-2" /> Regenerate Audio
                         </DropdownMenuItem>

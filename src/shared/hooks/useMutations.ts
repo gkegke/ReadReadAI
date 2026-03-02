@@ -69,3 +69,11 @@ export const useRegenerateChunksMutation = () => {
         onError: (err) => console.error('[Mutation] Regenerate Chunks Failed', err),
     });
 };
+
+export const useQueueMissingChunksMutation = () => {
+    return useMutation({
+        mutationFn: ({ projectId, fromOrderIndex = 0 }: { projectId: number, fromOrderIndex?: number }) => 
+            ChunkRepository.queueMissing(projectId, fromOrderIndex),
+        onError: (err) => console.error('[Mutation] Queue Missing Failed', err),
+    });
+};

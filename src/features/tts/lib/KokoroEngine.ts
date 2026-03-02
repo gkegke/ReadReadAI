@@ -21,14 +21,14 @@ export class KokoroEngine extends TTSEngine {
         if (!this.tts) throw new Error("Kokoro Engine not initialized");
 
         // The high-level library handles phonemization and inference in one call
-        const audio = await this.tts.generate(text, {
+        const result = await this.tts.generate(text, {
             voice: config.voice,
             speed: config.speed
         });
 
         return {
-            audio: audio.data, // Float32Array
-            sampleRate: 24000
+            audio: result.audio, // [FIX] Extract directly from `result.audio` not `.data`
+            sampleRate: result.sampling_rate || 24000
         };
     }
 

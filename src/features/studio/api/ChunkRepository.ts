@@ -10,9 +10,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         super(db.chunks, ChunkSchema);
     }
 
-    /**
-     * [CRITICAL FIX] Logic used by useAudioStore and usePlaybackEngine
-     */
     async getNext(currentChunkId: number): Promise<Chunk | undefined> {
         const current = await this.get(currentChunkId);
         if (!current) return undefined;
@@ -47,7 +44,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             const chunks = await db.chunks.where('id').anyOf(chunkIds).toArray();
             
             for (const chunk of chunks) {
-                // Invalidate existing audio
                 if (chunk.generatedFilePath) {
                     await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
                     await db.audioCache.delete(chunk.cleanTextHash);
@@ -66,21 +62,33 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     }
 
     /**
-     * [EPIC 2] Middle-of-document Insertion
-     * Handles splitting large pasted text into valid semantic chunks.
+     * [FEATURE] Auto-generation Sweeper.
+     * Sweeps from a target index onwards and queues generation jobs for missing files.
      */
+    async queueMissing(projectId: number, fromOrderIndex: number = 0): Promise<void> {
+        await db.transaction('rw', [db.chunks, db.jobs], async () => {
+            const chunks = await db.chunks
+                .where('projectId').equals(projectId)
+                .filter(c => c.orderInProject >= fromOrderIndex && c.status !== 'generated' && c.status !== 'processing')
+                .toArray();
+
+            for (const chunk of chunks) {
+                await this.ensureJob(chunk.id!, projectId, 20);
+                await db.chunks.update(chunk.id!, { status: 'pending', updatedAt: new Date() });
+            }
+        });
+    }
+
     async insertBlock(text: string, projectId: number, afterOrderIndex: number, role: 'heading' | 'paragraph' = 'paragraph'): Promise<void> {
         const subChunks = await chunkText(text);
         if (subChunks.length === 0) return;
 
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
-            // 1. Shift existing
             await db.chunks
                 .where('projectId').equals(projectId)
                 .filter(c => c.orderInProject > afterOrderIndex)
                 .modify(c => c.orderInProject += subChunks.length);
 
-            // 2. Insert new
             let currentOrder = afterOrderIndex + 1;
             const now = new Date();
 
@@ -96,7 +104,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                     updatedAt: now
                 });
 
-                await this.ensureJob(newId, projectId, 100); // High priority for manual insertions
+                await this.ensureJob(newId, projectId, 100); 
             }
         });
     }
@@ -138,7 +146,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 await db.audioCache.delete(chunk.cleanTextHash);
             }
 
-            // Shift everything after this chunk by 1
             await db.chunks
                 .where('projectId').equals(chunk.projectId)
                 .filter(c => c.orderInProject > chunk.orderInProject)
@@ -204,7 +211,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await db.chunks.delete(chunkB.id!);
             await db.jobs.where('chunkId').equals(chunkB.id!).delete();
 
-            // Shift everything back
             await db.chunks
                 .where('projectId').equals(chunkA.projectId)
                 .filter(c => c.orderInProject > chunkA.orderInProject + 1)

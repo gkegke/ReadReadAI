@@ -8,6 +8,8 @@ import { VoiceSelector } from './VoiceSelector';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
 import { AVAILABLE_MODELS } from '../../../shared/types/tts';
 import { ttsService } from '../../tts/services/TTSService';
+import { useQueueMissingChunksMutation } from '../../../shared/hooks/useMutations';
+import { useServices } from '../../../shared/context/ServiceContext';
 import { 
     Download, 
     Cpu, 
@@ -15,7 +17,8 @@ import {
     Layers,
     Loader2,
     CheckSquare,
-    Square
+    Square,
+    Zap
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../shared/components/ui/select';
 import { Button } from '../../../shared/components/ui/button';
@@ -24,6 +27,9 @@ export const ProjectInspector: React.FC = () => {
     const { activeProjectId, setScrollToChunkId, isExporting, isSelectionMode, setSelectionMode } = useProjectStore();
     const { data: chunks } = useProjectChunks(activeProjectId);
     const { activeModelId, setActiveModelId } = useSystemStore();
+    
+    const { mutate: queueMissing, isPending: isQueueing } = useQueueMissingChunksMutation();
+    const { queue } = useServices();
 
     const headings = useMemo(() => {
         return chunks.filter(c => c.role === 'heading');
@@ -34,6 +40,12 @@ export const ProjectInspector: React.FC = () => {
     const handleModelChange = (val: string) => {
         setActiveModelId(val);
         ttsService.loadModel(val);
+    };
+
+    const handleGenerateAll = () => {
+        queueMissing({ projectId: activeProjectId }, {
+            onSuccess: () => queue.poke()
+        });
     };
 
     return (
@@ -85,6 +97,17 @@ export const ProjectInspector: React.FC = () => {
                         >
                             {isExporting ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Download className="w-3 h-3 mr-1.5" />}
                             EXPORT
+                        </Button>
+
+                        <Button 
+                            variant="secondary" 
+                            size="sm" 
+                            onClick={handleGenerateAll}
+                            disabled={isQueueing}
+                            className="w-full font-black tracking-widest text-[9px] h-8 rounded-md col-span-2 border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
+                        >
+                            {isQueueing ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Zap className="w-3 h-3 mr-1.5" fill="currentColor" />}
+                            GENERATE MISSING AUDIO
                         </Button>
                     </div>
                 </div>
