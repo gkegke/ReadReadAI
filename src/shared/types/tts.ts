@@ -1,16 +1,15 @@
-export type TTSProvider = 'kokoro' | 'kitten' | 'dummy';
+export type TTSProvider = 'kokoro' | 'dummy';
 
 export interface TTSModelDef {
   id: string;
   name: string;
   provider: TTSProvider;
   description: string;
-  config?: {
-    dtype?: string;
+  config: {
+    dtype: 'q8' | 'fp16' | 'fp32' | 'base'; // base maps to standard
   };
 }
 
-// Added the missing interface for the Worker Proxy
 export interface TTSWorkerApi {
     initModel(modelId: string, unused: any, onProgress: (phase: string, percent: number) => void): Promise<{ modelId: string, voices: {id: string, name: string}[] }>;
     generate(text: string, config: ModelConfig, filepath: string): Promise<{ byteSize: number, peaks: number[], blob?: Blob }>;
@@ -18,32 +17,32 @@ export interface TTSWorkerApi {
 
 export const AVAILABLE_MODELS: TTSModelDef[] = [
   { 
-    id: 'kokoro-v1-q8', 
-    name: 'Kokoro (Balanced)', 
+    id: 'kokoro-perf', 
+    name: 'Kokoro Performance', 
     provider: 'kokoro', 
-    description: 'Standard quality (q8). Good balance of speed and fidelity.',
+    description: '8-bit Quantized. Very fast, lower RAM usage.',
     config: { dtype: 'q8' }
   },
   { 
-    id: 'kokoro-v1-fp16', 
-    name: 'Kokoro (High Res)', 
+    id: 'kokoro-balanced', 
+    name: 'Kokoro Balanced', 
     provider: 'kokoro', 
-    description: 'High precision (fp16). Very slow, best quality.',
-    config: { dtype: 'fp16' }
+    description: 'Standard precision. Good for most modern laptops.',
+    config: { dtype: 'base' }
   },
-  {
-    id: 'kitten-v0-q8',
-    name: 'Kitten TTS Nano',
-    provider: 'kitten',
-    description: 'Extremely lightweight (~24MB). Best for older devices.',
-    config: { dtype: 'q8' }
+  { 
+    id: 'kokoro-high', 
+    name: 'Kokoro High Quality', 
+    provider: 'kokoro', 
+    description: 'FP16 Precision. Best audio quality, requires more GPU/CPU.',
+    config: { dtype: 'fp16' }
   },
   { 
     id: 'debug-sine', 
     name: 'Debug (Instant)', 
     provider: 'dummy', 
     description: 'Generates a beep instantly. Use to test app features.',
-    config: {} 
+    config: { dtype: 'base' } 
   }
 ];
 

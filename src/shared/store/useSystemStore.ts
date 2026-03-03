@@ -5,7 +5,6 @@ interface SystemState {
   storageMode: 'unknown' | 'opfs' | 'memory';
   activeModelId: string;
   isZenMode: boolean; 
-  /** [EPIC 6] Stops generation to prevent OPFS crashes */
   isStorageFull: boolean; 
   setStorageMode: (mode: 'opfs' | 'memory') => void;
   setActiveModelId: (id: string) => void;
@@ -17,7 +16,7 @@ export const useSystemStore = create<SystemState>()(
   persist(
     (set) => ({
       storageMode: 'unknown',
-      activeModelId: 'kitten-v0-q8', 
+      activeModelId: 'kokoro-v1-q8', // Default fixed to Kokoro
       isZenMode: true, 
       isStorageFull: false,
       

@@ -1,6 +1,34 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import type { Project, Chunk } from '../types/schema';
+import type { Project, Chunk, Job } from '../types/schema';
+
+/**
+ * [EPIC 6] New: Get detailed job status for the Inspector
+ */
+export const useDetailedJobStatus = (projectId: number | null) => {
+    const data = useLiveQuery(async () => {
+        if (!projectId) return { active: [], pendingCount: 0 };
+        
+        const allJobs = await db.jobs.where('projectId').equals(projectId).toArray();
+        const pendingCount = allJobs.filter(j => j.status === 'pending').length;
+        const processing = allJobs.filter(j => j.status === 'processing');
+        
+        // Fetch the actual chunk text for the processing jobs
+        const activeChunks = await Promise.all(
+            processing.map(async (j) => {
+                const chunk = await db.chunks.get(j.chunkId);
+                return { id: j.chunkId, text: chunk?.textContent.slice(0, 30) + '...' };
+            })
+        );
+
+        return {
+            active: activeChunks,
+            pendingCount
+        };
+    }, [projectId]);
+
+    return data || { active: [], pendingCount: 0 };
+};
 
 export const useProjects = () => {
     const data = useLiveQuery(

@@ -5,7 +5,7 @@
       "destination": "/index.html"
     }
   ],
-  "headers": [
+  "headers":[
     {
       "source": "/(.*)",
       "headers":[
@@ -15,7 +15,7 @@
         },
         {
           "key": "Cross-Origin-Embedder-Policy",
-          "value": "require-corp"
+          "value": "credentialless"
         }
       ]
     },

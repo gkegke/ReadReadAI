@@ -5,12 +5,8 @@ import { logger } from '../../../shared/services/Logger';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
 
 /**
- * JobQueueManager (V5 - Main Thread Dispatcher)
- * [CRITICAL] Moved out of a Web Worker to avoid "Nested Worker" compatibility issues.
- * The Dispatcher runs on the main thread, but the AI work is still performed
- * by the TTS Worker via the ttsService.
+ * JobQueueManager (V6 - High Observability)
  */
-
 const managerMachine = createMachine({
     id: 'jobManager',
     initial: 'idle',
@@ -36,7 +32,10 @@ const managerMachine = createMachine({
                     },
                     { target: 'sleeping' }
                 ],
-                onError: { target: 'sleeping' }
+                onError: { 
+                    target: 'sleeping',
+                    actions: ({ event }) => logger.error('JobQueue', 'Error finding job', event.error)
+                }
             }
         },
         processing: {
@@ -50,40 +49,53 @@ const managerMachine = createMachine({
                 }
             }
         },
+        paused: {
+            on: { 
+                RESUME: 'checking',
+                POKE: 'checking'
+            }
+        },
         sleeping: {
-            after: { 3000: 'checking' }, 
-            on: { POKE: 'checking' }
+            after: { 2000: 'checking' }, 
+            on: { 
+                POKE: 'checking',
+                STOP: 'paused'
+            }
         }
     }
 }, {
     actors: {
         findJob: fromPromise(async () => {
-            // [EPIC 6] Respect storage quota
-            if (useSystemStore.getState().isStorageFull) return null;
+            if (useSystemStore.getState().isStorageFull) {
+                logger.warn('JobQueue', 'Skipping check: Storage is full.');
+                return null;
+            }
 
-            return await navigator.locks.request('readread-job-orchestrator', { ifAvailable: true }, async (lock) => {
-                if (!lock) return null;
-                const jobs = await db.jobs.where('status').equals('pending').toArray();
-                if (jobs.length === 0) return null;
+            const jobs = await db.jobs.where('status').equals('pending').toArray();
+            if (jobs.length === 0) {
+                // Low noise log
+                return null;
+            }
 
-                // Priority sort: Higher number = higher priority
-                jobs.sort((a, b) => b.priority - a.priority || a.id! - b.id!);
-                return jobs[0];
-            });
+            // [LOGGING] Evidence of queue activity
+            logger.debug('JobQueue', `Found ${jobs.length} pending jobs. Picking highest priority.`);
+            
+            jobs.sort((a, b) => b.priority - a.priority || a.id! - b.id!);
+            return jobs[0];
         }),
         executeJob: fromPromise(async ({ input }: any) => {
             const job = input;
-            const startTime = Date.now();
+            logger.info('JobQueue', `Starting Chunk [${job.chunkId}] (Priority: ${job.priority})`);
             
             await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
             
             try {
                 await AudioGenerationService.generate(job.chunkId);
                 await db.jobs.delete(job.id!);
-                
-                logger.debug('JobQueue', `Job [${job.chunkId}] success`, { ms: Date.now() - startTime });
+                logger.info('JobQueue', `Completed Chunk [${job.chunkId}]`);
             } catch (e) {
-                logger.error('JobQueue', `Job [${job.chunkId}] failed`, e);
+                logger.error('JobQueue', `Failed Chunk [${job.chunkId}]`, e);
+                // Move back to pending but lower priority so we don't loop on a broken chunk forever
                 await db.jobs.update(job.id!, { status: 'pending', priority: 0, updatedAt: new Date() });
                 throw e; 
             }
@@ -98,7 +110,8 @@ class JobQueueManager {
     public async init() {
         if (this.isStarted) return;
         
-        // Cleanup zombie states from previous sessions
+        logger.info('JobQueue', 'Initializing Orchestrator...');
+        
         await db.transaction('rw', [db.chunks, db.jobs], async () => {
             await db.chunks.where('status').equals('processing').modify({ status: 'pending' });
             await db.jobs.where('status').equals('processing').modify({ status: 'pending' });
@@ -107,18 +120,25 @@ class JobQueueManager {
         this.actor.start();
         this.actor.send({ type: 'START' });
         this.isStarted = true;
-        logger.info('JobQueue', 'Main-thread orchestrator online.');
     }
 
     public poke() {
-        if (this.isStarted) {
-            this.actor.send({ type: 'POKE' });
-        }
+        logger.debug('JobQueue', 'Manual poke received.');
+        this.actor.send({ type: 'POKE' });
     }
 
     public stop() {
-        this.actor.stop();
-        this.isStarted = false;
+        logger.warn('JobQueue', 'Orchestrator Paused by user.');
+        this.actor.send({ type: 'STOP' });
+    }
+
+    public resume() {
+        logger.info('JobQueue', 'Orchestrator Resumed.');
+        this.actor.send({ type: 'RESUME' });
+    }
+
+    public getStatus() {
+        return this.actor.getSnapshot().value;
     }
 }
 
