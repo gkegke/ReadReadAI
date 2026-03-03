@@ -4,14 +4,19 @@ import { cachedFetch, cleanTextForTTS } from './utils';
 import { g2pService } from '../services/G2PService'; 
 import { logger } from '../../../shared/services/Logger';
 
-// [CRITICAL FIX] ONNX Runtime Web types expect specific property names.
-// Keys must match actual filenames or the specific proxy/wasm file mappings.
-ort.env.wasm.wasmPaths = {
-    'ort-wasm-simd-threaded.wasm': '/onnx-runtime/ort-wasm-simd-threaded.wasm',
-    'ort-wasm-simd.wasm': '/onnx-runtime/ort-wasm-simd.wasm',
-    'ort-wasm.wasm': '/onnx-runtime/ort-wasm.wasm',
-    'ort-wasm-simd-threaded.jsep.wasm': '/onnx-runtime/ort-wasm-simd-threaded.jsep.wasm',
-} as any; // Cast as any if local types haven't updated to latest JSEP support
+/**
+ * [CRITICAL: WASM RESOLUTION]
+ * [IMPORTANCE: 10/10] In Vite/Vercel, we must point ORT to the static directory 
+ * where the .wasm binaries live. 
+ */
+const WASM_PATH_PREFIX = '/onnx-runtime/';
+
+// Point ORT to the directory containing all WASM binaries. 
+// Using the string path is more stable for TS types than individual filename keys.
+ort.env.wasm.wasmPaths = WASM_PATH_PREFIX;
+
+// [CRITICAL] Disable the proxy worker to avoid MJS resolution issues in certain environments
+ort.env.wasm.proxy = false;
 
 // Suppression of CPU Vendor warning logs
 // @ts-ignore
@@ -23,6 +28,8 @@ export abstract class BaseOnnxEngine extends TTSEngine {
     protected async initSession(modelPath: string): Promise<void> {
         try {
             logger.debug('BaseOnnxEngine', `Fetching model: ${modelPath}`);
+            
+            // Ensure the WASM binary is ready before creating session
             const modelResponse = await cachedFetch(modelPath);
             const modelBuffer = await modelResponse.arrayBuffer();
             
@@ -31,8 +38,12 @@ export abstract class BaseOnnxEngine extends TTSEngine {
                 graphOptimizationLevel: 'all',
             });
             logger.info('BaseOnnxEngine', `Session initialized for ${modelPath}`);
-        } catch (e) {
+        } catch (e: any) {
             logger.error('BaseOnnxEngine', `Failed to load model: ${modelPath}`, e);
+            // Log the specific ORT error to help debug
+            if (e.message?.includes('backend')) {
+                logger.error('BaseOnnxEngine', 'WASM Backend initialization failed. Check COOP/COEP headers or file paths.');
+            }
             throw new Error(`Failed to load ONNX model from ${modelPath}`);
         }
     }

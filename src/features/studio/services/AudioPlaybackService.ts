@@ -1,7 +1,8 @@
-// [FILE: /web/src/features/studio/services/AudioPlaybackService.ts]
 import { createMachine, createActor, assign, fromPromise, type Actor } from 'xstate';
 import { logger } from '../../../shared/services/Logger';
-import workletUrl from '../workers/audio-processor.ts?url';
+
+// [STABILITY] Explicitly define the worklet path using the standard Vite URL constructor
+const workletUrl = new URL('../workers/audio-processor.ts', import.meta.url).href;
 
 export enum PlaybackState {
     IDLE = 'IDLE',
@@ -103,7 +104,6 @@ const playbackMachine = createMachine({
                     target: PlaybackState.BUFFERING,
                     actions: 'assignPlayData'
                 },
-                // [CRITICAL FIX] Explicitly silence hardware on STOP
                 STOP: { 
                     target: PlaybackState.IDLE, 
                     actions: ['stopAudio', assign({ activeChunkId: null })] 
@@ -163,10 +163,6 @@ export class AudioPlaybackService {
                 suspendAudio: ({ context }) => {
                     context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
                 },
-                /**
-                 * [FIX: ISSUE 1] stopAudio
-                 * Forces the AudioWorklet to dump its internal PCM buffer immediately.
-                 */
                 stopAudio: ({ context }) => {
                     context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
                     context.workletNode?.port.postMessage({ type: 'CLEAR' });
@@ -189,6 +185,7 @@ export class AudioPlaybackService {
                     }
                     if (ctx.state === 'suspended') await ctx.resume();
                     if (!workletNode) {
+                        // Using the evaluated URL string
                         await ctx.audioWorklet.addModule(workletUrl);
                         workletNode = new AudioWorkletNode(ctx, 'audio-stream-processor');
                         workletNode.connect(ctx.destination);
