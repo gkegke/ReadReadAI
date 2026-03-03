@@ -10,6 +10,12 @@ export interface TTSModelDef {
   };
 }
 
+// Added the missing interface for the Worker Proxy
+export interface TTSWorkerApi {
+    initModel(modelId: string, unused: any, onProgress: (phase: string, percent: number) => void): Promise<{ modelId: string, voices: {id: string, name: string}[] }>;
+    generate(text: string, config: ModelConfig, filepath: string): Promise<{ byteSize: number, peaks: number[], blob?: Blob }>;
+}
+
 export const AVAILABLE_MODELS: TTSModelDef[] = [
   { 
     id: 'kokoro-v1-q8', 
@@ -46,33 +52,6 @@ export interface ModelConfig {
   speed: number;
   lang: string;
 }
-
-export type TTSWorkerRequest =
-  | { type: 'INIT_MODEL'; payload: { modelId: string; rootHandle?: FileSystemDirectoryHandle } }
-  | { 
-      type: 'GENERATE', 
-      payload: { 
-        text: string; 
-        config: ModelConfig; 
-        id: string;
-        filepath: string; 
-      } 
-    };
-
-export type TTSWorkerResponse =
-  | { type: 'INIT_SUCCESS'; payload: { modelId: string; voices?: {id: string, name: string}[] } }
-  | { type: 'INIT_ERROR'; error: string }
-  | { 
-      type: 'GENERATION_COMPLETE'; 
-      payload: { 
-        id: string; 
-        byteSize: number; 
-        // Blob is only returned if OPFS is unavailable in the Worker environment
-        blob?: Blob; 
-      } 
-    }
-  | { type: 'GENERATION_ERROR'; payload: { id: string; error: string } }
-  | { type: 'PROGRESS'; payload: { phase: string; percent: number } };
 
 export enum ModelStatus {
   UNLOADED = 'UNLOADED',

@@ -12,7 +12,6 @@ const PHONEME_CACHE = new Map<string, string>();
 
 /**
  * G2P Worker Implementation
- * Exposed via Comlink to simplify main-thread communication.
  */
 class G2PWorkerImpl {
     public async phonemize(text: string, lang: string = 'en-us'): Promise<string> {
@@ -24,6 +23,8 @@ class G2PWorkerImpl {
         const id = Math.random().toString(36).substring(7);
         const outputFilename = `out_${id}.txt`;
 
+        // [STABILITY] espeak-ng is a complex WASM build.
+        // We ensure the module is instantiated within the worker thread's scoped context.
         const ModuleConfig: ESpeakModuleConfig = {
             locateFile: (path: string) => {
                 if (path.endsWith('.wasm')) return '/wasm/espeak-ng.wasm';
@@ -37,15 +38,16 @@ class G2PWorkerImpl {
                 `"${text.replace(/"/g, '')}"` 
             ],
             print: () => {}, 
-            printErr: (text: string) => {
-                if (!text.includes('Aborted') && !text.includes('program exited')) {
-                    console.warn(`[espeak-log] ${text}`);
+            printErr: (msg: string) => {
+                // Only log actual errors, not exit codes
+                if (msg.includes('error') || msg.includes('Fail')) {
+                    console.error(`[espeak-ng] ${msg}`);
                 }
             }
         };
 
         try {
-            // @ts-ignore
+            // Instantiate the WASM module
             const mod = await ESpeakNg(ModuleConfig);
 
             if (mod.FS.analyzePath(outputFilename).exists) {

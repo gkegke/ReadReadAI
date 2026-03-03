@@ -7,7 +7,7 @@ import { db } from '../../../shared/db';
 
 class JobQueueManager {
     private worker: any = null;
-    private rawWorker: ManagerWorker | null = null;
+    private rawWorker: Worker | null = null;
 
     public async init() {
         // [CRITICAL] If worker exists, check if it's responsive. 

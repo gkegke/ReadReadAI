@@ -77,7 +77,7 @@ class IngestWorker {
                 await db.chunks
                     .where('projectId').equals(projectId)
                     .filter(c => c.orderInProject > afterOrderIndex)
-                    .modify(c => c.orderInProject += shiftAmount);
+                    .modify(c => { c.orderInProject += shiftAmount });
             }
 
             const BATCH_SIZE = 50;
@@ -93,13 +93,14 @@ class IngestWorker {
                 status: 'pending' as const,
                 createdAt: now,
                 updatedAt: now
-            });
+            }) as number;
 
             await db.jobs.add({
                 chunkId: headingId,
                 projectId,
                 status: 'pending' as const,
                 priority: 10,
+                retryCount: 0,
                 createdAt: now
             });
 
@@ -124,6 +125,7 @@ class IngestWorker {
                     projectId,
                     status: 'pending' as const,
                     priority: 10,
+                    retryCount: 0,
                     createdAt: now
                 }));
 
@@ -143,7 +145,7 @@ class IngestWorker {
         const { document } = parseHTML(html);
         const reader = new Readability(document);
         const article = reader.parse();
-        return article ? article.textContent : document.body.textContent || '';
+        return article?.textContent ?? document.body.textContent ?? '';
     }
 }
 

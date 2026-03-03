@@ -33,12 +33,13 @@ export const AudioGenerationService = {
             const config = { voice: voiceId, speed, lang: 'en-us' };
             const filePath = `audio/${currentRefHash}.wav`;
 
-            const result = await ttsService.generate(chunk.textContent, config, filePath);
+            // FIXED: ttsService.generate returns number (byteSize), not an object
+            const byteSize = await ttsService.generate(chunk.textContent, config, filePath);
 
             await db.audioCache.put({
                 hash: currentRefHash,
                 path: filePath,
-                byteSize: result.byteSize,
+                byteSize: byteSize, // FIXED
                 mimeType: 'audio/wav',
                 createdAt: new Date(),
                 lastAccessedAt: new Date()

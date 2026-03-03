@@ -41,10 +41,11 @@ export const JobSchema = z.object({
     id: z.number().optional(),
     chunkId: z.number(),
     projectId: z.number(),
-    status: z.enum(['pending', 'processing', 'failed']),
+    status: z.enum(['pending', 'processing', 'failed']).default('pending'),
     priority: z.number().default(0),
     retryCount: z.number().default(0),
     createdAt: z.date(),
+    updatedAt: z.date().optional(), // Added to satisfy manager updates
 });
 
 // [EPIC 4] GC Table Schema

@@ -21,7 +21,7 @@ export const DemoService = {
                 createdAt: new Date(),
                 updatedAt: new Date(),
                 voiceSettings: { voiceId: 'af_heart', speed: 1.0 }
-            });
+            }) as number;
 
             // [EPIC 1] Flat Canvas Demonstration
             const chunkData = [
@@ -50,10 +50,11 @@ export const DemoService = {
             const chunkIds = await ChunkRepository.bulkAdd(chunkData);
             
             const jobs = chunkIds.map((id) => ({
-                chunkId: id,
+                chunkId: id as number,
                 projectId,
                 status: 'pending' as const,
                 priority: 10,
+                retryCount: 0,
                 createdAt: new Date()
             }));
 

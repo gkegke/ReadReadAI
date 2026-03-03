@@ -40,6 +40,26 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         });
     }
 
+    async deleteChunks(projectId: number, chunkIds: number[]): Promise<void> {
+        await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+            const chunks = await db.chunks.where('id').anyOf(chunkIds).toArray();
+            for (const chunk of chunks) {
+                if (chunk.generatedFilePath) {
+                    await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
+                }
+            }
+            await db.chunks.bulkDelete(chunkIds);
+            await db.jobs.where('chunkId').anyOf(chunkIds).delete();
+            
+            // Re-order remaining chunks
+            const remaining = await db.chunks.where('projectId').equals(projectId).sortBy('orderInProject');
+            for (let i = 0; i < remaining.length; i++) {
+                await db.chunks.update(remaining[i].id!, { orderInProject: i });
+            }
+        });
+        StorageQuotaService.processOrphanQueue();
+    }
+
     async bulkRegenerate(projectId: number, chunkIds: number[]): Promise<void> {
         await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
             const chunks = await db.chunks.where('id').anyOf(chunkIds).toArray();
@@ -62,12 +82,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         StorageQuotaService.processOrphanQueue();
     }
 
-    /**
-     * [ISSUE 2 FIX] Complete Audio Invalidation Routine
-     * Now also clears the playback service's internal buffer cache.
-     */
     async clearProjectAudio(projectId: number): Promise<void> {
-        // Purge memory cache immediately
         audioPlaybackService.clearBufferCache();
 
         await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
@@ -112,7 +127,6 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         const subChunks = await chunkText(text);
         if (subChunks.length === 0) return;
 
-        // Get project to include voice in initial hash
         const project = await db.projects.get(projectId);
         const voiceId = project?.voiceSettings?.voiceId;
 
@@ -120,7 +134,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await db.chunks
                 .where('projectId').equals(projectId)
                 .filter(c => c.orderInProject > afterOrderIndex)
-                .modify(c => c.orderInProject += subChunks.length);
+                .modify(c => { c.orderInProject += subChunks.length; });
 
             let currentOrder = afterOrderIndex + 1;
             const now = new Date();
@@ -131,11 +145,11 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                     role: currentOrder === afterOrderIndex + 1 ? role : 'paragraph',
                     orderInProject: currentOrder++,
                     textContent: content,
-                    cleanTextHash: hashText(content, voiceId), // [ISSUE 2 FIX]
+                    cleanTextHash: hashText(content, voiceId),
                     status: 'pending',
                     createdAt: now,
                     updatedAt: now
-                });
+                }) as number;
 
                 await this.ensureJob(newId, projectId, 100); 
             }
@@ -157,7 +171,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             await db.chunks.update(chunkId, {
                 textContent: newText,
-                cleanTextHash: hashText(newText, voiceId), // [ISSUE 2 FIX]
+                cleanTextHash: hashText(newText, voiceId),
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()
@@ -188,11 +202,11 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await db.chunks
                 .where('projectId').equals(chunk.projectId)
                 .filter(c => c.orderInProject > chunk.orderInProject)
-                .modify(c => c.orderInProject += 1);
+                .modify(c => { c.orderInProject += 1 });
 
             await db.chunks.update(chunkId, {
                 textContent: firstPart,
-                cleanTextHash: hashText(firstPart, voiceId), // [ISSUE 2 FIX]
+                cleanTextHash: hashText(firstPart, voiceId),
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()
@@ -204,11 +218,11 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 role: 'paragraph', 
                 orderInProject: chunk.orderInProject + 1,
                 textContent: secondPart,
-                cleanTextHash: hashText(secondPart, voiceId), // [ISSUE 2 FIX]
+                cleanTextHash: hashText(secondPart, voiceId),
                 status: 'pending',
                 createdAt: new Date(),
                 updatedAt: new Date()
-            });
+            }) as number;
 
             await this.ensureJob(newChunkId, chunk.projectId, 80);
         });
@@ -244,7 +258,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             
             await db.chunks.update(chunkA.id!, {
                 textContent: newText,
-                cleanTextHash: hashText(newText, voiceId), // [ISSUE 2 FIX]
+                cleanTextHash: hashText(newText, voiceId),
                 status: 'pending',
                 generatedFilePath: null,
                 updatedAt: new Date()
@@ -256,7 +270,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await db.chunks
                 .where('projectId').equals(chunkA.projectId)
                 .filter(c => c.orderInProject > chunkA.orderInProject + 1)
-                .modify(c => c.orderInProject -= 1);
+                .modify(c => { c.orderInProject -= 1 });
 
             await this.ensureJob(chunkA.id!, chunkA.projectId, 50);
         });
@@ -276,6 +290,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 projectId,
                 status: 'pending',
                 priority,
+                retryCount: 0,
                 createdAt: new Date()
             });
         }

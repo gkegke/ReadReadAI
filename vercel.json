@@ -1,8 +1,14 @@
 {
+  "rewrites":[
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
   "headers": [
     {
       "source": "/(.*)",
-      "headers": [
+      "headers":[
         {
           "key": "Cross-Origin-Opener-Policy",
           "value": "same-origin"
@@ -14,8 +20,17 @@
       ]
     },
     {
+      "source": "/onnx-runtime/(.*)",
+      "headers":[
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
       "source": "/tts-models/(.*)",
-      "headers": [
+      "headers":[
         {
           "key": "Cache-Control",
           "value": "public, max-age=31536000, immutable"
