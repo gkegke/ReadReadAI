@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "vercel-build": "echo 'Configuring Git LFS...' && git config remote.origin.url https://${GITHUB_TOKEN:+$GITHUB_TOKEN@}github.com/${VERCEL_GIT_REPO_OWNER:-gkegke}/${VERCEL_GIT_REPO_SLUG:-ReadReadAI}.git && git lfs pull && tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",

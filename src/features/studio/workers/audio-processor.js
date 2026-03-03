@@ -1,27 +1,19 @@
-// Define the AudioWorkletGlobalScope types which are not in standard lib.dom.d.ts
-interface AudioWorkletProcessor {
-    readonly port: MessagePort;
-    process(inputs: Float32Array[][], outputs: Float32Array[][], parameters: Record<string, Float32Array>): boolean;
-}
-
-declare var registerProcessor: (name: string, processorCtor: (new (options?: any) => AudioWorkletProcessor)) => void;
-declare var AudioWorkletProcessor: {
-    prototype: AudioWorkletProcessor;
-    new (options?: any): AudioWorkletProcessor;
-};
-
 /**
  * AudioStreamProcessor (Phase 2)
  * Handles ring-buffer of PCM data with gapless transitions.
+ * 
+ * [FIX: VERCEL/VITE DEPLOYMENT] 
+ * Converted to pure JavaScript to prevent Vite/esbuild from serving raw TypeScript 
+ * strings to the AudioWorklet context, which caused 'interface is a reserved identifier' errors.
  */
 class AudioStreamProcessor extends AudioWorkletProcessor {
-    private buffer: Float32Array = new Float32Array(0);
-    private isPaused: boolean = true;
-    private framesProcessed: number = 0;
-    private totalFramesEverPushed: number = 0;
-
     constructor() {
         super();
+        this.buffer = new Float32Array(0);
+        this.isPaused = true;
+        this.framesProcessed = 0;
+        this.totalFramesEverPushed = 0;
+
         this.port.onmessage = (event) => {
             const { type, audio, paused } = event.data;
 
@@ -37,7 +29,7 @@ class AudioStreamProcessor extends AudioWorkletProcessor {
         };
     }
 
-    private appendData(newData: Float32Array) {
+    appendData(newData) {
         const combined = new Float32Array(this.buffer.length + newData.length);
         combined.set(this.buffer);
         combined.set(newData, this.buffer.length);
@@ -45,7 +37,7 @@ class AudioStreamProcessor extends AudioWorkletProcessor {
         this.totalFramesEverPushed += newData.length;
     }
 
-    process(_inputs: Float32Array[][], outputs: Float32Array[][]): boolean {
+    process(_inputs, outputs) {
         const output = outputs[0];
         const channelCount = output.length;
         const frameCount = output[0].length;
