@@ -2,7 +2,8 @@ import { createMachine, createActor, assign, fromPromise, type Actor } from 'xst
 import { logger } from '../../../shared/services/Logger';
 
 // [STABILITY] Explicitly define the worklet path using the standard Vite URL constructor
-const workletUrl = new URL('../workers/audio-processor.ts', import.meta.url).href;
+// [FIX] Point to the pure JS version to prevent TS syntax leaking into Worklet context
+const workletUrl = new URL('../workers/audio-processor.js', import.meta.url).href;
 
 export enum PlaybackState {
     IDLE = 'IDLE',
