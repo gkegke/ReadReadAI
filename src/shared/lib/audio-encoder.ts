@@ -10,10 +10,6 @@ export class AudioEncoderService {
         return typeof AudioEncoder !== 'undefined' && typeof AudioData !== 'undefined';
     }
 
-    /**
-     * Fast internal PCM-to-WAV wrapping. 
-     * Essential for storing audio in OPFS without compression latency.
-     */
     static encodeWav(samples: Float32Array, sampleRate: number): Blob {
         const buffer = new ArrayBuffer(44 + samples.length * 2);
         const view = new DataView(buffer);
@@ -64,7 +60,7 @@ export class AudioEncoderService {
 
             const muxer = new Muxer({
                 target: new ArrayBufferTarget(),
-                video: null,
+                video: undefined,
                 audio: {
                     codec: 'A_OPUS',
                     sampleRate: sampleRate,

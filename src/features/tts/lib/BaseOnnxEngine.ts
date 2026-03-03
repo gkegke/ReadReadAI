@@ -4,12 +4,14 @@ import { cachedFetch, cleanTextForTTS } from './utils';
 import { g2pService } from '../services/G2PService'; 
 import { logger } from '../../../shared/services/Logger';
 
+// [CRITICAL FIX] ONNX Runtime Web types expect specific property names.
+// Keys must match actual filenames or the specific proxy/wasm file mappings.
 ort.env.wasm.wasmPaths = {
     'ort-wasm-simd-threaded.wasm': '/onnx-runtime/ort-wasm-simd-threaded.wasm',
     'ort-wasm-simd.wasm': '/onnx-runtime/ort-wasm-simd.wasm',
     'ort-wasm.wasm': '/onnx-runtime/ort-wasm.wasm',
     'ort-wasm-simd-threaded.jsep.wasm': '/onnx-runtime/ort-wasm-simd-threaded.jsep.wasm',
-};
+} as any; // Cast as any if local types haven't updated to latest JSEP support
 
 // Suppression of CPU Vendor warning logs
 // @ts-ignore

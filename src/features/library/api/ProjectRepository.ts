@@ -4,6 +4,7 @@ import { ChunkRepository } from '../../studio/api/ChunkRepository';
 import { AudioGenerationService } from '../../tts/services/AudioGenerationService';
 import { BaseRepository } from '../../../shared/api/BaseRepository';
 import { importService } from '../../../shared/services/ImportService';
+import { exportService } from '../../../shared/services/ExportService';
 import { hashText } from '../../../shared/lib/text-processor';
 
 class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema> {
@@ -11,10 +12,6 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
         super(db.projects, ProjectSchema);
     }
 
-    /**
-     * [FIX: ISSUE 2] Scaffolding for New Projects
-     * Added skipScaffolding parameter to prevent redundant chunks when importing files.
-     */
     async createProject(name: string, skipScaffolding = false): Promise<number> {
         const now = new Date();
         const projectName = name.trim() || 'Untitled Project';
@@ -29,7 +26,6 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
 
             if (skipScaffolding) return projectId;
 
-            // Initialize with default blocks for manual "New Project" path
             const headingText = "New Project";
             const paragraphText = "Start typing here, or use the Inspector to import a document.";
 
@@ -58,12 +54,12 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
 
             const chunkIds = await db.chunks.bulkAdd(chunks, { allKeys: true });
 
-            // Automatically queue jobs for initial blocks
             const jobs = (chunkIds as number[]).map(id => ({
                 chunkId: id,
                 projectId,
                 status: 'pending' as const,
                 priority: 10,
+                retryCount: 0,
                 createdAt: now
             }));
             await db.jobs.bulkAdd(jobs);
@@ -72,22 +68,24 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
         });
     }
 
-    async importDocument(
-        file: File, 
-        projectId: number, 
-        afterOrderIndex?: number, 
-        onProgress?: (percent: number, text: string) => void
-    ) {
+    async importDocument(file: File, projectId: number, afterOrderIndex?: number, onProgress?: (percent: number, text: string) => void) {
         return await importService.importFile(file, projectId, afterOrderIndex, onProgress);
     }
 
-    async importRawText(
-        text: string, 
-        projectId: number, 
-        afterOrderIndex?: number, 
-        onProgress?: (percent: number, text: string) => void
-    ) {
+    async importRawText(text: string, projectId: number, afterOrderIndex?: number, onProgress?: (percent: number, text: string) => void) {
         return await importService.importText(text, projectId, afterOrderIndex, onProgress);
+    }
+
+    async exportProjectAudio(projectId: number) {
+        const result = await exportService.exportProjectAudio(projectId);
+        if (result) {
+            const url = URL.createObjectURL(result.blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = result.filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
     }
 
     async generateChunkAudio(chunkId: number): Promise<void> {

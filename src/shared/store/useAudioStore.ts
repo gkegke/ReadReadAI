@@ -1,4 +1,3 @@
-// [FILE: /web/src/shared/store/useAudioStore.ts]
 import { create } from 'zustand';
 import { audioPlaybackService, PlaybackState } from '../../features/studio/services/AudioPlaybackService';
 import { ChunkRepository } from '../../features/studio/api/ChunkRepository'; 
@@ -15,6 +14,7 @@ interface AudioState {
   currentTime: number;
   duration: number;
   setActiveChunkId: (id: number | null) => void;
+  setPlaybackSpeed: (speed: number) => void;
   togglePlay: () => void;
   playNext: () => Promise<void>;
   skipToChunk: (id: number) => Promise<void>;
@@ -45,12 +45,9 @@ export const useAudioStore = create<AudioState>((set, get) => {
     duration: 0,
 
     setActiveChunkId: (id) => set({ activeChunkId: id, currentTime: 0, duration: 0 }),
+    setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
     togglePlay: () => audioPlaybackService.toggle(),
     
-    /**
-     * [FIX: ISSUE 1] stopAll
-     * Explicitly terminates the service and clears local store state.
-     */
     stopAll: () => {
         audioPlaybackService.stop();
         set({ activeChunkId: null, isPlaying: false, currentTime: 0, duration: 0 });
@@ -75,7 +72,6 @@ export const useAudioStore = create<AudioState>((set, get) => {
     },
 
     playNext: async () => {
-      // [FIX: ISSUE 1] Guard: If we are no longer in a project, abort the sequence.
       const activeProject = useProjectStore.getState().activeProjectId;
       if (!activeProject) {
           logger.info('AudioStore', 'Autoplay aborted: No active project.');

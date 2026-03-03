@@ -192,7 +192,7 @@ export class AudioPlaybackService {
                         await ctx.audioWorklet.addModule(workletUrl);
                         workletNode = new AudioWorkletNode(ctx, 'audio-stream-processor');
                         workletNode.connect(ctx.destination);
-                        workletNode.port.onmessage = (e) => {
+                        workletNode.port.onmessage = (e: MessageEvent) => {
                             if (e.data.type === 'PROGRESS' && this.onProgress) {
                                 this.onProgress(e.data.processedFrames / 24000, e.data.totalFrames / 24000);
                             }

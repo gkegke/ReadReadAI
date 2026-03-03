@@ -4,14 +4,18 @@ import { ChunkRepository } from '../../features/studio/api/ChunkRepository';
 
 export const useImportDocumentMutation = () => {
     return useMutation({
-        mutationFn: (file: File) => ProjectRepository.importDocument(file),
+        // FIXED: Accepted projectId in payload
+        mutationFn: ({ file, projectId }: { file: File, projectId: number }) => 
+            ProjectRepository.importDocument(file, projectId),
         onError: (err) => console.error('[Mutation] Import Document Failed', err),
     });
 };
 
 export const useImportTextMutation = () => {
     return useMutation({
-        mutationFn: (text: string) => ProjectRepository.importRawText(text),
+        // FIXED: Accepted projectId in payload
+        mutationFn: ({ text, projectId }: { text: string, projectId: number }) => 
+            ProjectRepository.importRawText(text, projectId),
         onError: (err) => console.error('[Mutation] Import Text Failed', err),
     });
 };
