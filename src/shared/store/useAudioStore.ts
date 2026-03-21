@@ -5,6 +5,7 @@ import { ProjectRepository } from '../../features/library/api/ProjectRepository'
 import { storage } from '../services/storage';
 import { logger } from '../services/Logger';
 import { useProjectStore } from './useProjectStore';
+import { db } from '../db'; // [CRITICAL] Needed for first-chunk lookup
 
 interface AudioState {
   playbackState: PlaybackState;
@@ -46,7 +47,48 @@ export const useAudioStore = create<AudioState>((set, get) => {
 
     setActiveChunkId: (id) => set({ activeChunkId: id, currentTime: 0, duration: 0 }),
     setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
-    togglePlay: () => audioPlaybackService.toggle(),
+    
+    /**
+     * togglePlay
+     * [FIX: ISSUE 1] If no chunk is selected, find the first chunk in the project.
+     */
+    togglePlay: async () => {
+        const { activeChunkId, isPlaying } = get();
+        
+        // If we have an active chunk, just toggle the transport
+        if (activeChunkId) {
+            audioPlaybackService.toggle();
+            return;
+        }
+
+        // If no chunk is active, attempt to start from the beginning
+        const activeProject = useProjectStore.getState().activeProjectId;
+        if (!activeProject) return;
+
+        try {
+            const firstChunk = await db.chunks
+                .where('projectId').equals(activeProject)
+                .sortBy('orderInProject');
+
+            if (firstChunk && firstChunk.length > 0) {
+                const targetId = firstChunk[0].id!;
+                // Setting active ID and starting playback logic
+                await get().skipToChunk(targetId);
+                
+                // If skipToChunk didn't automatically trigger service (due to isPlaying check), force it
+                if (audioPlaybackService.state !== PlaybackState.PLAYING) {
+                    // Re-fetch blob and play
+                    const fresh = await ChunkRepository.get(targetId);
+                    if (fresh?.generatedFilePath) {
+                        const blob = await storage.readFile(fresh.generatedFilePath);
+                        audioPlaybackService.playChunk(targetId, blob);
+                    }
+                }
+            }
+        } catch (err) {
+            logger.error('AudioStore', 'Failed to toggle play from empty selection', err);
+        }
+    },
     
     stopAll: () => {
         audioPlaybackService.stop();
@@ -54,20 +96,18 @@ export const useAudioStore = create<AudioState>((set, get) => {
     },
 
     skipToChunk: async (id: number) => {
-        const wasPlaying = get().isPlaying;
+        // [UX] If we are skipping, we assume the user wants to hear it immediately
         set({ activeChunkId: id, currentTime: 0, duration: 0 });
 
-        if (wasPlaying) {
-            try {
-                await ProjectRepository.ensureChunkAudio(id);
-                const fresh = await ChunkRepository.get(id);
-                if (fresh?.generatedFilePath) {
-                    const blob = await storage.readFile(fresh.generatedFilePath);
-                    audioPlaybackService.playChunk(id, blob);
-                }
-            } catch (e) {
-                logger.error('AudioStore', 'Manual skip failed to play', e);
+        try {
+            await ProjectRepository.ensureChunkAudio(id);
+            const fresh = await ChunkRepository.get(id);
+            if (fresh?.generatedFilePath) {
+                const blob = await storage.readFile(fresh.generatedFilePath);
+                audioPlaybackService.playChunk(id, blob);
             }
+        } catch (e) {
+            logger.error('AudioStore', 'Manual skip failed to play', e);
         }
     },
 

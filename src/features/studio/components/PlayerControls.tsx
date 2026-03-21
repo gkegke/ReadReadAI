@@ -11,13 +11,13 @@ export const PlayerControls: React.FC = () => {
   
   const { data: chunkIds } = useProjectChunkIds(activeProjectId);
 
-  if (!activeProjectId || !chunkIds || chunkIds.length === 0) return null;
+  if (!activeProjectId || !chunkIds) return null;
 
   const currentChunkIndex = activeChunkId ? chunkIds.indexOf(activeChunkId) : -1;
   const hasPrev = currentChunkIndex > 0;
   const hasNext = currentChunkIndex < chunkIds.length - 1;
+  const hasChunks = chunkIds.length > 0;
 
-  // [FIX: ISSUE 1] Use skipToChunk instead of raw ID setting
   const handlePrev = () => { if (hasPrev) skipToChunk(chunkIds[currentChunkIndex - 1]); };
   const handleNext = () => { if (hasNext) skipToChunk(chunkIds[currentChunkIndex + 1]); };
   
@@ -39,15 +39,29 @@ export const PlayerControls: React.FC = () => {
           <div className="flex flex-col min-w-[140px]">
               <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">Timeline</span>
               <span className="text-xs font-bold truncate opacity-80">
-                  {activeChunkId ? `Chunk ${currentChunkIndex + 1} of ${chunkIds.length}` : 'Select a chunk'}
+                  {activeChunkId 
+                    ? `Chunk ${currentChunkIndex + 1} of ${chunkIds.length}` 
+                    : hasChunks ? 'Ready to play' : 'Empty Project'}
               </span>
           </div>
           
           <div className="flex items-center gap-6">
              <button title="Previous Chunk (K)" onClick={handlePrev} disabled={!hasPrev} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipBack className="w-5 h-5" fill="currentColor" /></button>
-             <button title="Play / Pause (Spacebar)" onClick={togglePlay} disabled={!activeChunkId} className={cn("w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background")}>
+             
+             {/* [FIX: ISSUE 1] Button is now enabled as long as the project has content */}
+             <button 
+                title="Play / Pause (Spacebar)" 
+                onClick={togglePlay} 
+                disabled={!hasChunks} 
+                className={cn(
+                    "w-14 h-14 rounded-full flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-xl", 
+                    isPlaying ? "bg-primary text-primary-foreground" : "bg-foreground text-background",
+                    !hasChunks && "opacity-20 grayscale pointer-events-none"
+                )}
+             >
                  {isPlaying ? <Pause className="w-7 h-7" fill="currentColor" /> : <Play className="w-7 h-7 ml-1" fill="currentColor" />}
              </button>
+
              <button title="Next Chunk (J)" onClick={handleNext} disabled={!hasNext} className="text-foreground/50 hover:text-foreground disabled:opacity-10 transition-colors"><SkipForward className="w-5 h-5" fill="currentColor" /></button>
           </div>
 

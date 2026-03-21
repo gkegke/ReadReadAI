@@ -7,8 +7,9 @@ import { ModelStatus } from '../../../shared/types/tts';
 import { ProjectRepository } from '../../library/api/ProjectRepository';
 import { projectRoute } from '../../../app/router';
 import { ProjectSearch } from './ProjectSearch';
-import { Activity, ChevronLeft, Loader2 } from 'lucide-react';
+import { Activity, ChevronLeft, Loader2, PanelRight } from 'lucide-react';
 import { Button } from '../../../shared/components/ui/button';
+import { cn } from '../../../shared/lib/utils';
 
 /**
  * [EPIC 2] Simplified Header.
@@ -17,7 +18,7 @@ import { Button } from '../../../shared/components/ui/button';
 export const StudioHeader: React.FC = () => {
     const navigate = useNavigate();
     const { projectId } = useParams({ from: projectRoute.id });
-    const { activeProjectId } = useProjectStore();
+    const { activeProjectId, isInspectorOpen, toggleInspector } = useProjectStore();
     const { modelStatus, progressPercent } = useTTSStore();
     const { data: project } = useProject(activeProjectId || parseInt(projectId));
 
@@ -66,20 +67,36 @@ export const StudioHeader: React.FC = () => {
             </div>
 
             {/* CENTER: Search */}
-            <div className="flex-1 flex justify-center max-w-md">
+            <div className="flex-1 flex justify-center max-w-md hidden sm:flex">
                 <ProjectSearch />
             </div>
 
-            {/* RIGHT: Status Only */}
+            {/* RIGHT: Status & Toggles */}
             <div className="flex items-center gap-2 shrink-0">
-                <div className={`flex items-center gap-1.5 text-[9px] font-black uppercase px-3 py-1.5 rounded-full border ${
+                <div className={`flex items-center gap-1.5 text-[9px] font-black uppercase px-2 md:px-3 py-1.5 rounded-full border ${
                     modelStatus === ModelStatus.READY ? 'text-green-600 bg-green-500/5 border-green-500/20' :
                     modelStatus === ModelStatus.LOADING ? 'text-amber-600 bg-amber-500/5 border-amber-500/20 animate-pulse' :
                     'text-muted-foreground bg-secondary/50 border-border'
                 }`}>
-                    <Activity className="w-3 h-3" />
-                    {modelStatus === ModelStatus.LOADING ? `${progressPercent}%` : modelStatus}
+                    <Activity className="w-3 h-3 shrink-0" />
+                    {/* [RESPONSIVE] Hide status text on very small mobile screens to save room */}
+                    <span className="hidden md:inline">
+                        {modelStatus === ModelStatus.LOADING ? `${progressPercent}%` : modelStatus}
+                    </span>
                 </div>
+
+                <Button 
+                    variant="ghost" 
+                    size="icon" 
+                    onClick={toggleInspector}
+                    className={cn(
+                        "w-8 h-8 rounded-md transition-colors shrink-0", 
+                        isInspectorOpen ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary"
+                    )}
+                    title="Toggle Inspector"
+                >
+                    <PanelRight className="w-4 h-4" />
+                </Button>
             </div>
         </header>
     );
