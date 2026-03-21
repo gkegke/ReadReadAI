@@ -5,8 +5,8 @@ interface ProjectState {
   scrollToChunkId: number | null; 
   isExporting: boolean;
   selectedChunkIds: number[]; 
-  isSelectionMode: boolean; // [Epic 3] Toggles safe bulk-selection UX
-  isInspectorOpen: boolean; // [UX] Toggles sidebar visibility
+  isSelectionMode: boolean;
+  isInspectorOpen: boolean;
   
   setActiveProject: (id: number | null) => void;
   setScrollToChunkId: (id: number | null) => void;
@@ -24,8 +24,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   isExporting: false,
   selectedChunkIds: [],
   isSelectionMode: false,
-  // [RESPONSIVE] Default to closed on mobile devices to save screen real estate
-  isInspectorOpen: typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
+  // Always true so users see the integration dashboard when a project opens
+  isInspectorOpen: true,
 
   setActiveProject: (id) => set({ 
     activeProjectId: id,

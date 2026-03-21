@@ -27,7 +27,7 @@ export const CreateProjectDialog: React.FC = () => {
     return (
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
-                <Button className="font-black tracking-widest text-xs h-12 px-6 rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 transition-transform">
+                <Button className="w-full sm:w-auto font-black tracking-widest text-xs h-12 px-6 rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 transition-transform">
                     <Plus className="w-4 h-4 mr-2" strokeWidth={3} />
                     NEW PROJECT
                 </Button>

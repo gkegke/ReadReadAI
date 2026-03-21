@@ -87,7 +87,7 @@ export const DashboardPage: React.FC = () => {
 
     return (
         <div 
-            className={`relative h-full overflow-y-auto p-8 bg-background selection:bg-primary/10 transition-colors ${isDragging ? 'bg-primary/5' : ''}`}
+            className={`relative h-full overflow-y-auto p-4 sm:p-8 bg-background selection:bg-primary/10 transition-colors ${isDragging ? 'bg-primary/5' : ''}`}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDragOver={handleDragOver}
@@ -105,10 +105,10 @@ export const DashboardPage: React.FC = () => {
 
             {importProgress.active && (
                 <div className="absolute inset-0 z-[100] flex items-center justify-center bg-background/80 backdrop-blur-sm m-4 rounded-3xl animate-in fade-in">
-                    <div className="text-center space-y-4">
+                    <div className="text-center space-y-4 px-6">
                         <Loader2 className="w-16 h-16 text-primary mx-auto animate-spin" />
                         <h2 className="text-xl font-black tracking-tight uppercase">{importProgress.text}</h2>
-                        <div className="w-64 h-2 bg-secondary rounded-full overflow-hidden border border-border">
+                        <div className="w-full max-w-xs mx-auto h-2 bg-secondary rounded-full overflow-hidden border border-border">
                             <div className="h-full bg-primary transition-all duration-300 shadow-[0_0_15px_rgba(var(--primary),0.5)]" style={{ width: `${importProgress.percent}%` }} />
                         </div>
                     </div>
@@ -116,30 +116,32 @@ export const DashboardPage: React.FC = () => {
             )}
 
             <div className={`max-w-6xl mx-auto ${isDragging || importProgress.active ? 'pointer-events-none opacity-50' : ''}`}>
-                <header className="flex items-end justify-between mb-12">
-                    <div className="flex items-center gap-5">
-                        <div className="w-12 h-12 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/20">
-                            <Disc className="w-7 h-7 text-background animate-spin [animation-duration:10s]" />
+                <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 md:mb-12">
+                    <div className="flex items-center gap-4 sm:gap-5">
+                        <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/20 shrink-0">
+                            <Disc className="w-6 h-6 sm:w-7 sm:h-7 text-background animate-spin [animation-duration:10s]" />
                         </div>
                         <div>
                             <div className="flex items-center gap-2 mb-1">
-                                <LayoutGrid className="w-4 h-4 text-primary" />
-                                <span className="text-[10px] font-black tracking-[0.2em] text-muted-foreground uppercase">Library</span>
+                                <LayoutGrid className="w-3 h-3 sm:w-4 sm:h-4 text-primary" />
+                                <span className="text-[9px] sm:text-[10px] font-black tracking-[0.2em] text-muted-foreground uppercase">Library</span>
                             </div>
-                            <h1 className="text-4xl font-black tracking-tight">STUDIO</h1>
+                            <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-none">STUDIO</h1>
                         </div>
                     </div>
                     
-                    <div className="flex items-center gap-3">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
                         <Button 
                             variant="secondary"
                             onClick={handleQuickStart}
-                            className="font-black tracking-widest text-xs h-12 px-6 rounded-2xl border-2 border-primary/10 hover:border-primary/30 transition-all"
+                            className="w-full sm:w-auto font-black tracking-widest text-xs h-12 px-6 rounded-2xl border-2 border-primary/10 hover:border-primary/30 transition-all"
                         >
-                            <Zap className="w-4 h-4 mr-2 text-amber-500 fill-amber-500" />
+                            <Zap className="w-4 h-4 mr-2 text-amber-500 fill-amber-500 shrink-0" />
                             QUICK START
                         </Button>
-                        <CreateProjectDialog />
+                        <div className="w-full sm:w-auto">
+                            <CreateProjectDialog />
+                        </div>
                     </div>
                 </header>
 
@@ -150,16 +152,16 @@ export const DashboardPage: React.FC = () => {
                         ))}
                     </div>
                 ) : projects.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center py-24 border-2 border-dashed border-primary/20 bg-secondary/10 rounded-3xl transition-all hover:border-primary/40 hover:bg-secondary/20">
-                        <div className="w-20 h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6">
-                            <ShieldCheck className="w-10 h-10 text-primary" />
+                    <div className="flex flex-col items-center justify-center py-16 sm:py-24 border-2 border-dashed border-primary/20 bg-secondary/10 rounded-3xl transition-all hover:border-primary/40 hover:bg-secondary/20 px-4">
+                        <div className="w-16 h-16 sm:w-20 sm:h-20 bg-primary/10 rounded-full flex items-center justify-center mb-6">
+                            <ShieldCheck className="w-8 h-8 sm:w-10 sm:h-10 text-primary" />
                         </div>
-                        <h2 className="text-2xl font-black tracking-tight uppercase mb-2">100% Local. Zero Cloud.</h2>
-                        <p className="text-sm text-muted-foreground font-bold tracking-widest uppercase opacity-60 mb-8 text-center max-w-md">
+                        <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase mb-2 text-center">100% Local. Zero Cloud.</h2>
+                        <p className="text-xs sm:text-sm text-muted-foreground font-bold tracking-widest uppercase opacity-60 mb-8 text-center max-w-md">
                             Absolute Privacy. Audio is synthesized directly on your device using WebAssembly.
                         </p>
-                        <div className="flex flex-col items-center gap-4">
-                            <label className="text-muted-foreground/60 font-mono text-sm bg-background px-4 py-2 rounded-lg border border-border shadow-sm hover:border-primary/50 hover:text-primary cursor-pointer transition-colors">
+                        <div className="flex flex-col items-center gap-4 w-full sm:w-auto">
+                            <label className="text-muted-foreground/60 font-mono text-xs sm:text-sm bg-background px-4 py-3 sm:py-2 rounded-lg border border-border shadow-sm hover:border-primary/50 hover:text-primary cursor-pointer transition-colors text-center w-full sm:w-auto">
                                 <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={handleFileInput} />
                                 Drag & Drop a PDF or text file anywhere to begin
                             </label>
@@ -174,13 +176,13 @@ export const DashboardPage: React.FC = () => {
                         </div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                         {projects.map(project => (
                             <Link 
                                 key={project.id} 
                                 to="/project/$projectId" 
                                 params={{ projectId: String(project.id) }}
-                                className="group p-6 rounded-2xl border border-border bg-card hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
+                                className="group p-5 sm:p-6 rounded-2xl border border-border bg-card hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
                             >
                                 <div className="flex items-start justify-between mb-6">
                                     <div className="p-3 bg-secondary/50 rounded-xl text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
@@ -203,7 +205,7 @@ export const DashboardPage: React.FC = () => {
                                         </div>
                                     </div>
                                 </div>
-                                <h3 className="font-bold text-xl truncate group-hover:text-primary transition-colors">{project.name}</h3>
+                                <h3 className="font-bold text-lg sm:text-xl truncate group-hover:text-primary transition-colors">{project.name}</h3>
                                 <div className="mt-4 pt-4 border-t border-border/50 flex items-center justify-between">
                                     <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-tighter">Local Storage</span>
                                     <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
@@ -211,7 +213,7 @@ export const DashboardPage: React.FC = () => {
                             </Link>
                         ))}
 
-                        <label className="group p-6 rounded-2xl border-2 border-dashed border-border bg-transparent hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center cursor-pointer min-h-[200px]">
+                        <label className="group p-6 rounded-2xl border-2 border-dashed border-border bg-transparent hover:border-primary/50 hover:bg-primary/5 transition-all flex flex-col items-center justify-center cursor-pointer min-h-[180px] sm:min-h-[200px]">
                             <input type="file" className="hidden" accept=".pdf,.txt,.html" onChange={handleFileInput} />
                             <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
                                 <Plus className="w-6 h-6 text-primary" strokeWidth={3} />
