@@ -22,7 +22,8 @@ import {
     Zap,
     Trash2,
     PauseCircle,
-    PlayCircle
+    PlayCircle,
+    X
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../shared/components/ui/select';
 import { Button } from '../../../shared/components/ui/button';
@@ -85,7 +86,18 @@ export const ProjectInspector: React.FC = () => {
                                 <Layers className="w-4 h-4 text-muted-foreground" />
                                 <span className="text-[11px] font-black uppercase tracking-widest text-foreground">Inspector</span>
                             </div>
-                            <SettingsMenu />
+                            <div className="flex items-center gap-1">
+                                <SettingsMenu />
+                                <Button 
+                                    variant="ghost" 
+                                    size="icon" 
+                                    className="md:hidden w-8 h-8 text-muted-foreground hover:bg-secondary" 
+                                    onClick={() => setInspectorOpen(false)}
+                                    title="Close Inspector"
+                                >
+                                    <X className="w-4 h-4" />
+                                </Button>
+                            </div>
                         </div>
 
                         <div className="space-y-2">

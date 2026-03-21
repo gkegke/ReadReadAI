@@ -39,7 +39,12 @@ export const BootScreen: React.FC = () => {
                     <div className="relative w-20 h-20 mx-auto rounded-2xl bg-primary flex items-center justify-center shadow-2xl">
                         <Zap className="w-10 h-10 text-primary-foreground fill-current" />
                     </div>
-                    <h1 className="text-3xl font-black tracking-tighter uppercase mb-1">ReadRead Studio</h1>
+                    <div className="px-2">
+                        <h1 className="text-3xl font-black tracking-tighter uppercase mb-2">ReadRead Studio</h1>
+                        <p className="text-xs text-muted-foreground font-medium leading-relaxed">
+                            A fully offline, privacy-first AI audio studio that works on everyday devices. <br/>
+                        </p>
+                    </div>
                 </div>
 
                 {!hasInteracted ? (
@@ -47,19 +52,19 @@ export const BootScreen: React.FC = () => {
                         <TierButton 
                             icon={<Zap className="w-4 h-4"/>}
                             title="Performance"
-                            desc="Fastest. Low RAM (8-bit)."
+                            desc="Fastest audio generation - best for lower end devices."
                             onClick={() => handleIgnition('kokoro-perf')}
                         />
                         <TierButton 
                             icon={<Activity className="w-4 h-4"/>}
                             title="Balanced"
-                            desc="High fidelity standard."
+                            desc="Great fast audio fidelity for modern devices."
                             onClick={() => handleIgnition('kokoro-balanced')}
                         />
                         <TierButton 
                             icon={<Sparkles className="w-4 h-4"/>}
                             title="High Quality"
-                            desc="Max precision (FP16)."
+                            desc="Highest quality - still surprisingly fast for it's class."
                             onClick={() => handleIgnition('kokoro-high')}
                         />
                     </div>
@@ -78,6 +83,10 @@ export const BootScreen: React.FC = () => {
                                     style={{ width: `${progressPercent}%` }}
                                 />
                             </div>
+                            <p className="text-[10px] text-muted-foreground pt-2 font-medium opacity-70 text-center px-4">
+                                The AI model is downloading to your device's secure storage. 
+                                This only happens once, but may take a moment depending on your connection.
+                            </p>
                         </div>
 
                         <div className="bg-secondary/40 rounded-lg p-4 text-left font-mono space-y-1">
@@ -99,22 +108,12 @@ const TierButton = ({ icon, title, desc, onClick }: any) => (
         onClick={onClick}
         className="w-full p-4 bg-secondary/30 hover:bg-primary/10 border border-border hover:border-primary/40 rounded-2xl transition-all flex items-center gap-4 text-left group"
     >
-        <div className="w-10 h-10 rounded-xl bg-background flex items-center justify-center text-muted-foreground group-hover:text-primary transition-colors border border-border shadow-sm">
+        <div className="w-10 h-10 rounded-xl bg-background flex items-center justify-center text-muted-foreground group-hover:text-primary transition-colors border border-border shadow-sm shrink-0">
             {icon}
         </div>
         <div>
-            <div className="font-black uppercase tracking-widest text-xs group-hover:text-primary">{title}</div>
-            <div className="text-[10px] text-muted-foreground font-bold">{desc}</div>
+            <div className="font-black uppercase tracking-widest text-xs group-hover:text-primary mb-0.5">{title}</div>
+            <div className="text-[10px] text-muted-foreground font-bold leading-tight">{desc}</div>
         </div>
     </button>
 )
-
-const StatusBadge = ({ icon, label, status }: { icon: React.ReactNode, label: string, status: string }) => (
-    <div className="flex items-center gap-3 px-4 py-3 bg-secondary/30 rounded-xl border border-border/50">
-        <div className="text-primary">{icon}</div>
-        <div className="flex flex-col items-start leading-none">
-            <span className="text-[8px] font-bold text-muted-foreground uppercase mb-1">{label}</span>
-            <span className="text-[9px] font-black text-foreground tracking-wider uppercase">{status}</span>
-        </div>
-    </div>
-);
