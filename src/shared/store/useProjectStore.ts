@@ -6,6 +6,7 @@ interface ProjectState {
   isExporting: boolean;
   selectedChunkIds: number[]; 
   isSelectionMode: boolean; // [Epic 3] Toggles safe bulk-selection UX
+  isInspectorOpen: boolean; // [UX] Toggles sidebar visibility
   
   setActiveProject: (id: number | null) => void;
   setScrollToChunkId: (id: number | null) => void;
@@ -13,6 +14,8 @@ interface ProjectState {
   toggleChunkSelection: (id: number) => void;
   setSelectionMode: (isActive: boolean) => void;
   clearSelection: () => void;
+  toggleInspector: () => void;
+  setInspectorOpen: (isOpen: boolean) => void;
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
@@ -21,6 +24,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
   isExporting: false,
   selectedChunkIds: [],
   isSelectionMode: false,
+  // [RESPONSIVE] Default to closed on mobile devices to save screen real estate
+  isInspectorOpen: typeof window !== 'undefined' ? window.innerWidth >= 768 : true,
 
   setActiveProject: (id) => set({ 
     activeProjectId: id,
@@ -41,9 +46,12 @@ export const useProjectStore = create<ProjectState>((set) => ({
 
   setSelectionMode: (isActive) => set({ 
       isSelectionMode: isActive,
-      // Auto-clear selection if we are exiting selection mode
       selectedChunkIds: isActive ? [] : []
   }),
 
   clearSelection: () => set({ selectedChunkIds: [], isSelectionMode: false }),
+  
+  toggleInspector: () => set((state) => ({ isInspectorOpen: !state.isInspectorOpen })),
+  
+  setInspectorOpen: (isOpen) => set({ isInspectorOpen: isOpen }),
 }));
