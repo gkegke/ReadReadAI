@@ -1,17 +1,17 @@
 import * as ort from 'onnxruntime-web';
 import { TTSEngine } from './types';
 import { cachedFetch, cleanTextForTTS } from './utils';
-import { g2pService } from '../services/G2PService'; 
+import { g2pService } from '../services/G2PService';
 import { logger } from '../../../shared/services/Logger';
 
 /**
  * [CRITICAL: WASM RESOLUTION]
- * [IMPORTANCE: 10/10] In Vite/Vercel, we must point ORT to the static directory 
- * where the .wasm binaries live. 
+ * [IMPORTANCE: 10/10] In Vite/Vercel, we must point ORT to the static directory
+ * where the .wasm binaries live.
  */
 const WASM_PATH_PREFIX = '/onnx-runtime/';
 
-// Point ORT to the directory containing all WASM binaries. 
+// Point ORT to the directory containing all WASM binaries.
 // Using the string path is more stable for TS types than individual filename keys.
 ort.env.wasm.wasmPaths = WASM_PATH_PREFIX;
 
@@ -28,11 +28,11 @@ export abstract class BaseOnnxEngine extends TTSEngine {
     protected async initSession(modelPath: string): Promise<void> {
         try {
             logger.debug('BaseOnnxEngine', `Fetching model: ${modelPath}`);
-            
+
             // Ensure the WASM binary is ready before creating session
             const modelResponse = await cachedFetch(modelPath);
             const modelBuffer = await modelResponse.arrayBuffer();
-            
+
             this.session = await ort.InferenceSession.create(modelBuffer, {
                 executionProviders: ['wasm'],
                 graphOptimizationLevel: 'all',

@@ -59,23 +59,20 @@
   }
 }
 
-/* [STORY: GLASSMORPHISM] Standardized depth utilities */
 @layer components {
   .glass-header {
-    /* This will now work correctly because of the config update */
-    @apply bg-background/80 backdrop-blur-md border-b border-border sticky top-0 z-50;
+    @apply bg-background/95 border-b border-border sticky top-0 z-50;
   }
-  
+
   .glass-sidebar {
-    @apply bg-secondary/30 backdrop-blur-xl border-r border-border;
+    @apply bg-secondary/20 border-r border-border;
   }
 
   .glass-panel {
-    @apply bg-background/95 backdrop-blur-lg border-t border-border;
+    @apply bg-background/95 backdrop-blur-xl border-t border-border shadow-2xl;
   }
 }
 
-/* Custom Animation for Processing State preserved */
 @keyframes shimmer {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }

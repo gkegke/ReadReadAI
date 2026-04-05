@@ -16,7 +16,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
 
-    /* [FIX] Relaxed linting for Production Build */
+    /* Relaxed linting for Production Build */
     "strict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,

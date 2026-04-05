@@ -76,8 +76,8 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
         return await importService.importText(text, projectId, afterOrderIndex, onProgress);
     }
 
-    async exportProjectAudio(projectId: number) {
-        const result = await exportService.exportProjectAudio(projectId);
+    async exportProjectAudio(projectId: number, chapterIds?: string[]) {
+        const result = await exportService.exportProjectAudio(projectId, chapterIds);
         if (result) {
             const url = URL.createObjectURL(result.blob);
             const a = document.createElement('a');
@@ -89,10 +89,10 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
     }
 
     async generateChunkAudio(chunkId: number): Promise<void> {
-        await db.chunks.update(chunkId, { 
-            status: 'pending', 
+        await db.chunks.update(chunkId, {
+            status: 'pending',
             generatedFilePath: null,
-            updatedAt: new Date() 
+            updatedAt: new Date()
         });
 
         return await AudioGenerationService.generate(chunkId);
@@ -101,7 +101,7 @@ class ProjectRepositoryImpl extends BaseRepository<Project, typeof ProjectSchema
     async deleteProject(projectId: number): Promise<void> {
         await db.transaction('rw', [db.projects, db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
             const chunks = await db.chunks.where('projectId').equals(projectId).toArray();
-            
+
             for (const chunk of chunks) {
                 if (chunk.generatedFilePath) {
                     await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { 
-    Dialog, 
-    DialogContent, 
-    DialogHeader, 
-    DialogTitle, 
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
     DialogTrigger,
-    DialogDescription 
+    DialogDescription
 } from '../../../shared/components/ui/dialog';
 import { Button } from '../../../shared/components/ui/button';
 import { ProjectRepository } from '../api/ProjectRepository';
@@ -18,7 +18,7 @@ export const CreateProjectDialog: React.FC = () => {
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!name.trim()) return;
-        
+
         await ProjectRepository.createProject(name);
         setName('');
         setOpen(false);

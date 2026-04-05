@@ -3,10 +3,10 @@ import { db } from '../../../shared/db';
 import { AudioGenerationService } from './AudioGenerationService';
 import { logger } from '../../../shared/services/Logger';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
+import { useProjectStore } from '../../../shared/store/useProjectStore';
+import { useTTSStore } from '../store/useTTSStore';
+import { ModelStatus } from '../../../shared/types/tts';
 
-/**
- * JobQueueManager (V6 - High Observability)
- */
 const managerMachine = createMachine({
     id: 'jobManager',
     initial: 'idle',
@@ -25,17 +25,14 @@ const managerMachine = createMachine({
             invoke: {
                 src: 'findJob',
                 onDone: [
-                    { 
-                        target: 'processing', 
-                        guard: ({ event }) => !!event.output, 
-                        actions: assign({ currentJob: ({ event }) => event.output }) 
+                    {
+                        target: 'processing',
+                        guard: ({ event }) => !!event.output,
+                        actions: assign({ currentJob: ({ event }) => event.output })
                     },
                     { target: 'sleeping' }
                 ],
-                onError: { 
-                    target: 'sleeping',
-                    actions: ({ event }) => logger.error('JobQueue', 'Error finding job', event.error)
-                }
+                onError: { target: 'sleeping' }
             }
         },
         processing: {
@@ -43,21 +40,21 @@ const managerMachine = createMachine({
                 src: 'executeJob',
                 input: ({ context }) => context.currentJob,
                 onDone: { target: 'checking', actions: assign({ consecutiveErrors: 0 }) },
-                onError: { 
-                    target: 'sleeping', 
-                    actions: assign({ consecutiveErrors: ({ context }) => context.consecutiveErrors + 1 }) 
+                onError: {
+                    target: 'sleeping',
+                    actions: assign({ consecutiveErrors: ({ context }) => context.consecutiveErrors + 1 })
                 }
             }
         },
         paused: {
-            on: { 
+            on: {
                 RESUME: 'checking',
                 POKE: 'checking'
             }
         },
         sleeping: {
-            after: { 2000: 'checking' }, 
-            on: { 
+            after: { 2000: 'checking' },
+            on: {
                 POKE: 'checking',
                 STOP: 'paused'
             }
@@ -66,38 +63,40 @@ const managerMachine = createMachine({
 }, {
     actors: {
         findJob: fromPromise(async () => {
-            if (useSystemStore.getState().isStorageFull) {
-                logger.warn('JobQueue', 'Skipping check: Storage is full.');
-                return null;
-            }
+            if (useSystemStore.getState().isStorageFull) return null;
 
-            const jobs = await db.jobs.where('status').equals('pending').toArray();
-            if (jobs.length === 0) {
-                // Low noise log
-                return null;
-            }
+            // Do not attempt generation if the AI Engine is unloaded/errored.
+            // This stops the infinite "Synthesis failed: Invalid Output" loop.
+            if (useTTSStore.getState().modelStatus !== ModelStatus.READY) return null;
 
-            // [LOGGING] Evidence of queue activity
-            logger.debug('JobQueue', `Found ${jobs.length} pending jobs. Picking highest priority.`);
-            
+            // Respect User Focus. Only process jobs for the project the user is actually looking at.
+            const activeId = useProjectStore.getState().activeProjectId;
+            if (!activeId) return null;
+
+            const jobs = await db.jobs
+                .where('projectId').equals(activeId)
+                .and(j => j.status === 'pending')
+                .toArray();
+
+            if (jobs.length === 0) return null;
+
+            // Prioritize higher numbers, then older records
             jobs.sort((a, b) => b.priority - a.priority || a.id! - b.id!);
             return jobs[0];
         }),
         executeJob: fromPromise(async ({ input }: any) => {
             const job = input;
-            logger.info('JobQueue', `Starting Chunk [${job.chunkId}] (Priority: ${job.priority})`);
-            
             await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
-            
+
             try {
                 await AudioGenerationService.generate(job.chunkId);
                 await db.jobs.delete(job.id!);
-                logger.info('JobQueue', `Completed Chunk [${job.chunkId}]`);
+                logger.debug('JobQueue', `Generated Chunk ${job.chunkId}`);
             } catch (e) {
-                logger.error('JobQueue', `Failed Chunk [${job.chunkId}]`, e);
-                // Move back to pending but lower priority so we don't loop on a broken chunk forever
-                await db.jobs.update(job.id!, { status: 'pending', priority: 0, updatedAt: new Date() });
-                throw e; 
+                logger.error('JobQueue', `Failed Chunk ${job.chunkId}`, e);
+                // Penalize priority to move to back of queue
+                await db.jobs.update(job.id!, { status: 'pending', priority: -1, updatedAt: new Date() });
+                throw e;
             }
         })
     }
@@ -109,37 +108,18 @@ class JobQueueManager {
 
     public async init() {
         if (this.isStarted) return;
-        
-        logger.info('JobQueue', 'Initializing Orchestrator...');
-        
-        await db.transaction('rw', [db.chunks, db.jobs], async () => {
-            await db.chunks.where('status').equals('processing').modify({ status: 'pending' });
-            await db.jobs.where('status').equals('processing').modify({ status: 'pending' });
-        });
+
+        // Cleanup stale 'processing' states from previous crashes
+        await db.jobs.where('status').equals('processing').modify({ status: 'pending' });
 
         this.actor.start();
         this.actor.send({ type: 'START' });
         this.isStarted = true;
     }
 
-    public poke() {
-        logger.debug('JobQueue', 'Manual poke received.');
-        this.actor.send({ type: 'POKE' });
-    }
-
-    public stop() {
-        logger.warn('JobQueue', 'Orchestrator Paused by user.');
-        this.actor.send({ type: 'STOP' });
-    }
-
-    public resume() {
-        logger.info('JobQueue', 'Orchestrator Resumed.');
-        this.actor.send({ type: 'RESUME' });
-    }
-
-    public getStatus() {
-        return this.actor.getSnapshot().value;
-    }
+    public poke() { this.actor.send({ type: 'POKE' }); }
+    public stop() { this.actor.send({ type: 'STOP' }); }
+    public resume() { this.actor.send({ type: 'RESUME' }); }
 }
 
 export const jobQueueManager = new JobQueueManager();

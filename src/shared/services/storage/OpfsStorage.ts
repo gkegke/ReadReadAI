@@ -55,7 +55,7 @@ export class OpfsStorageService implements StorageService {
   async deleteFile(path: string): Promise<void> {
     const root = await this.getRootHandle();
     if (!root) return;
-    
+
     const parts = path.split('/');
     const fileName = parts.pop()!;
     let currentDir = root;
@@ -90,11 +90,10 @@ export class OpfsStorageService implements StorageService {
     }
   }
 
-  // [EPIC 1] New API to support OPFS Reconciliation
   async listDirectory(path: string): Promise<string[]> {
       const root = await this.getRootHandle();
       if (!root) return [];
-      
+
       const parts = path.split('/').filter(Boolean);
       let currentDir = root;
 
@@ -102,7 +101,7 @@ export class OpfsStorageService implements StorageService {
           for (const part of parts) {
               currentDir = await currentDir.getDirectoryHandle(part);
           }
-          
+
           const files: string[] = [];
           // @ts-ignore (TypeScript missing async iterators for FileSystem API)
           for await (const [name, handle] of currentDir.entries()) {

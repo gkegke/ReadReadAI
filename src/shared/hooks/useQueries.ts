@@ -2,17 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
 import type { Project, Chunk, Job } from '../types/schema';
 
-/**
- * [EPIC 6] New: Get detailed job status for the Inspector
- */
 export const useDetailedJobStatus = (projectId: number | null) => {
     const data = useLiveQuery(async () => {
         if (!projectId) return { active: [], pendingCount: 0 };
-        
+
         const allJobs = await db.jobs.where('projectId').equals(projectId).toArray();
         const pendingCount = allJobs.filter(j => j.status === 'pending').length;
         const processing = allJobs.filter(j => j.status === 'processing');
-        
+
         // Fetch the actual chunk text for the processing jobs
         const activeChunks = await Promise.all(
             processing.map(async (j) => {
@@ -49,7 +46,8 @@ export const useProject = (id: number | null) => {
 export const useProjectChunks = (projectId: number | null) => {
     const data = useLiveQuery(
         async () => {
-            if (projectId === null) return [];
+            // Robust guard against null/NaN/0 keys
+            if (!projectId || isNaN(projectId)) return [];
             return await db.chunks
                 .where('projectId')
                 .equals(projectId)
@@ -57,22 +55,22 @@ export const useProjectChunks = (projectId: number | null) => {
         },
         [projectId]
     );
-    
-    return { data: data || [], isLoading: projectId !== null && data === undefined };
+
+    return { data: data || [], isLoading: !!projectId && data === undefined };
 };
 
 export const useProjectChunkIds = (projectId: number | null) => {
     const data = useLiveQuery(
         async () => {
-            if (projectId === null) return [];
+            if (!projectId || isNaN(projectId)) return [];
             const collection = db.chunks.where('projectId').equals(projectId);
             const chunks = await collection.primaryKeys();
             return chunks as number[];
         },
         [projectId]
     );
-    
-    return { data: data || [], isLoading: projectId !== null && data === undefined };
+
+    return { data: data || [], isLoading: !!projectId && data === undefined };
 };
 
 export const useChunk = (chunkId: number) => {
@@ -84,7 +82,7 @@ export const useGlobalJobStatus = () => {
     const status = useLiveQuery(async () => {
         const pendingCount = await db.jobs.where('status').anyOf('pending', 'processing').count();
         const processingCount = await db.jobs.where('status').equals('processing').count();
-            
+
         return { isWorking: pendingCount > 0, pendingCount, processingCount };
     }, []);
 

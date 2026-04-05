@@ -4,28 +4,33 @@ import { viteStaticCopy } from 'vite-plugin-static-copy'
 import { VitePWA } from 'vite-plugin-pwa'
 
 /**
- * [CRITICAL: PRODUCTION BUILD FIX]
  * Vite 6 Configuration for Offline AI Studio.
+ * Updated for compatibility with vite-plugin-pwa v0.21+
  */
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // Using 'prompt' allows us to use our custom "New Update Available" toast
+      // defined in main.tsx, respecting Human-First feedback principles.
+      registerType: 'prompt',
       injectRegister: 'auto',
       workbox: {
-        maximumFileSizeToCacheInBytes: 15 * 1024 * 1024, // Increased to 15MB for heavy AI bundles
+        // AI assets are large. We cache them aggressively but carefully.
+        maximumFileSizeToCacheInBytes: 20 * 1024 * 1024, // Upped to 20MB for v6 robustness
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        // We explicitly ignore heavy model binaries from the main bundle
+        // to prevent slow initial PWA install. They are handled by runtimeCaching.
         globIgnores: ['**/node_modules/**/*', '**/*audio-processor*', '**/*.wasm', '**/*.onnx', '**/*.bin'],
         runtimeCaching: [
           {
             urlPattern: /\.(?:onnx|wasm|bin|json)$/,
             handler: 'CacheFirst',
             options: {
-              cacheName: 'readread-ai-assets-v2',
-              expiration: { 
-                maxEntries: 100, 
-                maxAgeSeconds: 60 * 60 * 24 * 90 
+              cacheName: 'readread-ai-assets-v3',
+              expiration: {
+                maxEntries: 120,
+                maxAgeSeconds: 60 * 60 * 24 * 90 // 90 Days
               },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -54,23 +59,18 @@ export default defineConfig({
     })
   ],
 
-  // [FIX: IIFE WORKER ERROR] 
-  // Code-splitting builds (production) require workers to be in 'es' format.
   worker: {
     format: 'es',
     plugins: () => [react()]
   },
 
   define: {
-    // [FIX: ESPEAK-NG COMPAT] 
-    // Shims the 'module' reference often found in Emscripten-generated wrappers 
-    // to prevent Vite from trying to externalize Node.js internals.
     'process.env.NODE_DEBUG': undefined,
     'global.module': undefined
   },
 
   assetsInclude: ['**/*.wasm', '**/*.onnx', '**/*.bin'],
-  
+
   optimizeDeps: {
     exclude: ['onnxruntime-web']
   },

@@ -1,22 +1,14 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { RouterProvider } from '@tanstack/react-router'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
 import { router } from './router'
 import { ServiceProvider } from '../shared/context/ServiceContext'
 import { registerSW } from 'virtual:pwa-register'
 import './index.css'
+import { queryClient } from '../shared/lib/queryClient'
 
-// Initialize the QueryClient with sensible defaults for local development
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 1000 * 60 * 5, // 5 minutes
-      retry: 1,
-    },
-  },
-})
 
 // [PWA] Enhanced Auto-update
 const updateSW = registerSW({
@@ -31,7 +23,7 @@ const updateSW = registerSW({
       <button id="pwa-refresh" class="bg-background text-foreground px-3 py-1 rounded text-xs font-bold hover:opacity-90">RELOAD</button>
     `;
     document.body.appendChild(toast);
-    
+
     document.getElementById('pwa-refresh')?.addEventListener('click', () => {
       updateSW(true);
     });

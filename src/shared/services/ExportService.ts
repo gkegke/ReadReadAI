@@ -2,68 +2,85 @@ import JSZip from 'jszip';
 import { db } from '../db';
 import { storage } from './storage';
 import { AudioEncoderService } from '../lib/audio-encoder';
+import { deriveChapters } from '../lib/chapterUtils';
+import { logger } from './Logger';
 
-/**
- * Service responsible for packaging project assets into exportable formats.
- */
 class ExportService {
-    
-    async exportProjectAudio(projectId: number): Promise<{ blob: Blob, filename: string } | null> {
+    /**
+     * Chapter-Aware Export
+     * Packages selected chapters into a ZIP with deterministic naming.
+     */
+    async exportProjectAudio(
+        projectId: number,
+        selectedChapterIds?: string[]
+    ): Promise<{ blob: Blob, filename: string } | null> {
         const project = await db.projects.get(projectId);
         if (!project) throw new Error("Project not found");
 
-        const chunks = await db.chunks
+        const allChunks = await db.chunks
             .where('projectId')
             .equals(projectId)
             .sortBy('orderInProject');
 
-        if (!chunks || chunks.length === 0) {
+        if (!allChunks || allChunks.length === 0) {
             throw new Error("No content to export.");
         }
 
+        // Use the utility to get our hierarchy
+        const chapters = deriveChapters(allChunks);
+
+        // Filter based on user selection if provided
+        const filteredChapters = selectedChapterIds
+            ? chapters.filter(ch => selectedChapterIds.includes(ch.id))
+            : chapters;
+
+        if (filteredChapters.length === 0) return null;
+
         const zip = new JSZip();
-        const folderName = this.sanitizeFilename(project.name);
-        const folder = zip.folder(folderName);
-        
-        if(!folder) throw new Error("Failed to create zip folder");
+        const rootFolder = this.sanitizeFilename(project.name);
+        const folder = zip.folder(rootFolder);
+
+        if (!folder) throw new Error("FileSystem Error: Failed to create zip container");
 
         let filesAdded = 0;
 
-        for (const chunk of chunks) {
-            const filePath = chunk.generatedFilePath;
-            
-            if (filePath && chunk.status === 'generated') {
-                try {
-                    // 1. Read the raw internal WAV
-                    const rawWav = await storage.readFile(filePath);
-                    
-                    // 2. Compress to Opus on-the-fly for export
-                    const compressedAudio = await AudioEncoderService.encodeToOpus(rawWav);
-                    
-                    const orderPrefix = (chunk.orderInProject + 1).toString().padStart(3, '0');
-                    const textSnippet = this.sanitizeFilename(chunk.textContent.slice(0, 30));
-                    
-                    // Use webm extension if compressed, otherwise wav
-                    const ext = compressedAudio.type.includes('webm') ? 'webm' : 'wav';
-                    const fileName = `${orderPrefix} - ${textSnippet}.${ext}`;
+        // Iterative processing to manage memory pressure during Opus encoding
+        for (let chIdx = 0; chIdx < filteredChapters.length; chIdx++) {
+            const chapter = filteredChapters[chIdx];
+            const chPrefix = (chIdx + 1).toString().padStart(3, '0');
+            const chName = this.sanitizeFilename(chapter.title).slice(0, 30);
 
-                    folder.file(fileName, compressedAudio);
-                    filesAdded++;
-                } catch (e) {
-                    console.warn(`Skipping chunk ${chunk.id}: Audio file missing or corrupted`, e);
+            for (let blockIdx = 0; blockIdx < chapter.chunks.length; blockIdx++) {
+                const chunk = chapter.chunks[blockIdx];
+
+                if (chunk.status === 'generated' && chunk.generatedFilePath) {
+                    try {
+                        const rawWav = await storage.readFile(chunk.generatedFilePath);
+
+                        // [PERFORMANCE] Perform Opus compression for web-optimized delivery
+                        const compressedAudio = await AudioEncoderService.encodeToOpus(rawWav);
+
+                        const blockPrefix = (blockIdx + 1).toString().padStart(3, '0');
+                        const textSnippet = this.sanitizeFilename(chunk.textContent.slice(0, 20));
+
+                        // Structure: 001_Introduction_001_Welcome_to_Read.webm
+                        const fileName = `${chPrefix}_${chName}_${blockPrefix}_${textSnippet}.webm`;
+
+                        folder.file(fileName, compressedAudio);
+                        filesAdded++;
+                    } catch (e) {
+                        logger.warn('Export', `Skipping chunk ${chunk.id}: File inaccessible`, e);
+                    }
                 }
             }
         }
 
-        if (filesAdded === 0) {
-            return null;
-        }
+        if (filesAdded === 0) return null;
 
         const content = await zip.generateAsync({ type: 'blob' });
-        
         return {
             blob: content,
-            filename: `${folderName}_audio_export.zip`
+            filename: `${rootFolder}_audio_v3.zip`
         };
     }
 

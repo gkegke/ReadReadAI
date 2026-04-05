@@ -1,8 +1,3 @@
-/**
- * CRITICAL: Service Discovery & Dependency Injection Container.
- * This replaces raw singleton exports to allow for better testability,
- * lifecycle management, and cleaner architectural boundaries.
- */
 import React, { createContext, useContext, useMemo } from 'react';
 import { ttsService } from '../../features/tts/services/TTSService';
 import { audioPlaybackService } from '../../features/studio/services/AudioPlaybackService';

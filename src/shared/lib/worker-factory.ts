@@ -2,9 +2,7 @@ import * as Comlink from 'comlink';
 import { logger } from '../services/Logger';
 
 /**
- * Type-Safe Worker Factory (V5)
- * [EPIC 2] Implemented Worker Tearing (`recreate`) to completely sever 
- * WebAssembly memory contexts from the browser and prevent OOMs.
+ * Type-Safe Worker Factory
  */
 export class WorkerFactory<T> {
     private worker: Worker | null = null;
@@ -24,10 +22,10 @@ export class WorkerFactory<T> {
 
     private init(): Comlink.Remote<T> {
         if (this.isTerminated) throw new Error(`Worker ${this.name} is terminated.`);
-        
+
         try {
             this.worker = new this.workerConstructor();
-            
+
             this.worker.onerror = (err) => {
                 logger.error('WorkerFactory', `${this.name} Thread Crashed`, { message: err.message });
                 this.handleCrash();
@@ -65,7 +63,7 @@ export class WorkerFactory<T> {
     }
 
     /**
-     * [CRITICAL] Recreate safely tears down the thread, dumps WASM memory to GC, 
+     * Recreate safely tears down the thread, dumps WASM memory to GC,
      * and prepares the factory to spin up a fresh context on next getInstance()
      */
     public recreate() {

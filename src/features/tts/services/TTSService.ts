@@ -13,8 +13,6 @@ class TTSService {
   private isUIContext: boolean = typeof window !== 'undefined';
 
   public async loadModel(modelId: string) {
-    // [EPIC 1] Removed proactive hardware check + auto-downgrade. 
-    // We now respect the user's explicit choice from the BootScreen.
 
     if (this.localStatus !== ModelStatus.UNLOADED) {
         this.factory.recreate();

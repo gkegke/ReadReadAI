@@ -6,7 +6,7 @@ export const VoiceSettingsSchema = z.object({
 });
 
 export const ProjectSchema = z.object({
-  id: z.number().optional(), 
+  id: z.number().optional(),
   name: z.string().min(1, "Project name is required"),
   sourceFileName: z.string().optional(),
   voiceSettings: VoiceSettingsSchema.default({}),
@@ -24,15 +24,9 @@ export const ChunkSchema = z.object({
   orderInProject: z.number(),
   textContent: z.string(),
   status: ChunkStatusSchema.default('pending'),
-  activeAssetId: z.number().nullable().optional(), 
   generatedFilePath: z.string().nullable().optional(),
   cleanTextHash: z.string(),
   waveformPeaks: z.array(z.number()).optional(),
-  voiceOverride: z.object({
-    voiceId: z.string().optional(),
-    speed: z.number().optional(),
-  }).optional(),
-  noteContent: z.string().nullable().optional(),
   createdAt: z.date(),
   updatedAt: z.date(),
 });
@@ -45,10 +39,9 @@ export const JobSchema = z.object({
     priority: z.number().default(0),
     retryCount: z.number().default(0),
     createdAt: z.date(),
-    updatedAt: z.date().optional(), // Added to satisfy manager updates
+    updatedAt: z.date().optional(),
 });
 
-// [EPIC 4] GC Table Schema
 export const OrphanedFileSchema = z.object({
     id: z.number().optional(),
     path: z.string(),
@@ -59,12 +52,12 @@ export const IngestWorkerSchema = {
     processFile: z.object({
         file: z.instanceof(File),
         projectId: z.number(),
-        afterOrderIndex: z.number().optional() 
+        afterOrderIndex: z.number().optional()
     }),
     processText: z.object({
         text: z.string(),
         projectId: z.number(),
-        afterOrderIndex: z.number().optional() 
+        afterOrderIndex: z.number().optional()
     })
 };
 

@@ -2,10 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { useProjectChunks } from '../../../shared/hooks/useQueries';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { Search, X, CornerDownLeft } from 'lucide-react';
-import { 
-    Popover, 
-    PopoverContent, 
-    PopoverTrigger,
+import {
+    Popover,
+    PopoverContent,
     PopoverAnchor
 } from '../../../shared/components/ui/popover';
 import { cn } from '../../../shared/lib/utils';
@@ -14,7 +13,7 @@ import { logger } from '../../../shared/services/Logger';
 export const ProjectSearch: React.FC = () => {
     const { activeProjectId, setScrollToChunkId } = useProjectStore();
     const { data: chunks } = useProjectChunks(activeProjectId);
-    
+
     const [isOpen, setIsOpen] = useState(false);
     const [query, setQuery] = useState('');
 
@@ -26,7 +25,7 @@ export const ProjectSearch: React.FC = () => {
 
     const handleSelect = (chunkId: number) => {
         logger.info('ProjectSearch', 'User navigated to chunk via search', { chunkId });
-        setScrollToChunkId(chunkId); 
+        setScrollToChunkId(chunkId);
         setIsOpen(false);
         setQuery('');
     };
@@ -57,11 +56,11 @@ export const ProjectSearch: React.FC = () => {
                 </div>
             </PopoverAnchor>
 
-            <PopoverContent 
-                side="bottom" 
-                align="start" 
+            <PopoverContent
+                side="bottom"
+                align="start"
                 className="w-[320px] p-1 bg-background border-border shadow-2xl z-[100]"
-                onOpenAutoFocus={(e) => e.preventDefault()} 
+                onOpenAutoFocus={(e) => e.preventDefault()}
             >
                 {filteredChunks.length === 0 ? (
                     <div className="py-8 text-center">

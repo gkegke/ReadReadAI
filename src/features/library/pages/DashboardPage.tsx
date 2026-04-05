@@ -5,7 +5,6 @@ import { FileText, Clock, LayoutGrid, Zap, UploadCloud, ShieldCheck, Disc, Trash
 import { Link } from '@tanstack/react-router';
 import { ProjectRepository } from '../api/ProjectRepository';
 import { Button } from '../../../shared/components/ui/button';
-import { CreateProjectDialog } from '../components/CreateProjectDialog';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
 
 export const DashboardPage: React.FC = () => {
@@ -42,16 +41,15 @@ export const DashboardPage: React.FC = () => {
         try {
             setImportProgress({ active: true, percent: 0, text: 'Initializing...' });
             const projectName = file.name.replace(/\.[^/.]+$/, "") || "Imported Document";
-            
-            // [FIX: ISSUE 2] Explicitly skip scaffolding because we are about to import a document
+
             const id = await ProjectRepository.createProject(projectName, true);
-            
+
             useProjectStore.getState().setActiveProject(id);
-            
+
             await ProjectRepository.importDocument(file, id, undefined, (percent, text) => {
                 setImportProgress({ active: true, percent, text });
             });
-            
+
             navigate({ to: '/project/$projectId', params: { projectId: String(id) } });
         } catch (err) {
             console.error("Failed to import file", err);
@@ -74,7 +72,7 @@ export const DashboardPage: React.FC = () => {
         const file = e.target.files?.[0];
         if (!file) return;
         await processFileImport(file);
-        e.target.value = ''; 
+        e.target.value = '';
     };
 
     const handleDeleteProject = async (e: React.MouseEvent, id: number, name: string) => {
@@ -86,7 +84,7 @@ export const DashboardPage: React.FC = () => {
     };
 
     return (
-        <div 
+        <div
             className={`relative h-full overflow-y-auto p-4 sm:p-8 bg-background selection:bg-primary/10 transition-colors ${isDragging ? 'bg-primary/5' : ''}`}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
@@ -116,6 +114,7 @@ export const DashboardPage: React.FC = () => {
             )}
 
             <div className={`max-w-6xl mx-auto ${isDragging || importProgress.active ? 'pointer-events-none opacity-50' : ''}`}>
+
                 <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 mb-8 md:mb-12">
                     <div className="flex items-center gap-4 sm:gap-5">
                         <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-2xl bg-primary flex items-center justify-center shadow-xl shadow-primary/20 shrink-0">
@@ -129,19 +128,15 @@ export const DashboardPage: React.FC = () => {
                             <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-none">STUDIO</h1>
                         </div>
                     </div>
-                    
+
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
-                        <Button 
-                            variant="secondary"
+                        <Button
                             onClick={handleQuickStart}
-                            className="w-full sm:w-auto font-black tracking-widest text-xs h-12 px-6 rounded-2xl border-2 border-primary/10 hover:border-primary/30 transition-all"
+                            className="w-full sm:w-auto font-black tracking-widest text-xs h-12 px-8 rounded-2xl shadow-xl shadow-primary/20 hover:scale-105 transition-all"
                         >
-                            <Zap className="w-4 h-4 mr-2 text-amber-500 fill-amber-500 shrink-0" />
-                            QUICK START
+                            <Plus className="w-4 h-4 mr-2" strokeWidth={3} />
+                            NEW PROJECT
                         </Button>
-                        <div className="w-full sm:w-auto">
-                            <CreateProjectDialog />
-                        </div>
                     </div>
                 </header>
 
@@ -178,9 +173,9 @@ export const DashboardPage: React.FC = () => {
                 ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6">
                         {projects.map(project => (
-                            <Link 
-                                key={project.id} 
-                                to="/project/$projectId" 
+                            <Link
+                                key={project.id}
+                                to="/project/$projectId"
                                 params={{ projectId: String(project.id) }}
                                 className="group p-5 sm:p-6 rounded-2xl border border-border bg-card hover:border-primary/50 transition-all hover:shadow-xl hover:-translate-y-1"
                             >

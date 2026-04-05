@@ -1,0 +1,44 @@
+name: ReadRead Studio CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  quality-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run Pre-Commit Hooks
+        uses: pre-commit/action@v3.0.1
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: web/package.json
+
+      - name: Install dependencies
+        run: cd web && npm ci
+
+      - name: Type Check (TypeScript)
+        run: cd web && npm run build
+
+      - name: Unit Tests
+        run: cd web && npm run test
+
+      - name: E2E Tests (Playwright)
+        run: cd web && npx playwright install --with-deps && npm run test:e2e
+        env:
+          CI: true
