@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+defaults:
+  run:
+    working-directory: web
+
 jobs:
   quality-gate:
     runs-on: ubuntu-latest
@@ -21,24 +25,28 @@ jobs:
 
       - name: Run Pre-Commit Hooks
         uses: pre-commit/action@v3.0.1
+        with:
+          extra_args: --all-files
 
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: 'npm'
-          cache-dependency-path: web/package.json
+          cache-dependency-path: web/package-lock.json
 
       - name: Install dependencies
-        run: cd web && npm ci
+        run: npm ci
 
       - name: Type Check (TypeScript)
-        run: cd web && npm run build
+        run: npm run build
 
       - name: Unit Tests
-        run: cd web && npm run test
+        run: npm run test
 
       - name: E2E Tests (Playwright)
-        run: cd web && npx playwright install --with-deps && npm run test:e2e
+        run: |
+          npx playwright install --with-deps
+          npm run test:e2e
         env:
           CI: true
