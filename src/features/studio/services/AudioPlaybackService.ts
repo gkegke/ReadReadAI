@@ -1,274 +1,180 @@
-import { createMachine, createActor, assign, fromPromise, type Actor } from 'xstate';
 import { logger } from '../../../shared/services/Logger';
-
-// [STABILITY] Explicitly define the worklet path using the standard Vite URL constructor
-// [FIX] Point to the pure JS version to prevent TS syntax leaking into Worklet context
-const workletUrl = new URL('../workers/audio-processor.js', import.meta.url).href;
 
 export enum PlaybackState {
     IDLE = 'IDLE',
-    INITIALIZING = 'INITIALIZING',
-    BUFFERING = 'BUFFERING',
     PLAYING = 'PLAYING',
-    PAUSED = 'PAUSED',
-    ERROR = 'ERROR'
+    PAUSED = 'PAUSED'
 }
 
-type ProgressCallback = (currentTime: number, duration: number) => void;
-type EndedCallback = () => void;
-
-interface AudioContextData {
-    ctx: AudioContext | null;
-    workletNode: AudioWorkletNode | null;
-    activeChunkId: number | null;
-    bufferCache: Map<number, AudioBuffer>;
-    pendingBlob: Blob | null; 
-    pendingOffset: number;
+interface AudioChannel {
+    audio: HTMLAudioElement;
+    url: string | null;
+    hash: string | null;
 }
-
-const MAX_BUFFER_CACHE = 15;
-
-const playbackMachine = createMachine({
-    id: 'playback',
-    initial: PlaybackState.IDLE,
-    context: {
-        ctx: null,
-        workletNode: null,
-        activeChunkId: null,
-        bufferCache: new Map<number, AudioBuffer>(),
-        pendingBlob: null,
-        pendingOffset: 0,
-    } as AudioContextData,
-    states: {
-        [PlaybackState.IDLE]: {
-            on: {
-                HYDRATE: { target: PlaybackState.INITIALIZING },
-                PLAY: { 
-                    target: PlaybackState.INITIALIZING,
-                    actions: 'assignPlayData' 
-                },
-                CLEAR_CACHE: {
-                    actions: assign({
-                        bufferCache: () => new Map()
-                    })
-                }
-            }
-        },
-        [PlaybackState.INITIALIZING]: {
-            invoke: {
-                src: 'setupAudioContext',
-                input: ({ context }) => ({ ctx: context.ctx, workletNode: context.workletNode }),
-                onDone: [
-                    {
-                        guard: 'hasPendingPlay',
-                        target: PlaybackState.BUFFERING,
-                        actions: assign({
-                            ctx: ({ event }) => event.output.ctx,
-                            workletNode: ({ event }) => event.output.workletNode
-                        })
-                    },
-                    {
-                        target: PlaybackState.IDLE,
-                        actions: assign({
-                            ctx: ({ event }) => event.output.ctx,
-                            workletNode: ({ event }) => event.output.workletNode
-                        })
-                    }
-                ],
-                onError: { target: PlaybackState.ERROR }
-            }
-        },
-        [PlaybackState.BUFFERING]: {
-            invoke: {
-                src: 'decodeAndPush',
-                input: ({ context }) => ({
-                    chunkId: context.activeChunkId,
-                    blob: context.pendingBlob,
-                    offset: context.pendingOffset,
-                    bufferCache: context.bufferCache,
-                    ctx: context.ctx,
-                    workletNode: context.workletNode
-                }),
-                onDone: { 
-                    target: PlaybackState.PLAYING,
-                    actions: 'clearPendingPlayData' 
-                },
-                onError: { target: PlaybackState.ERROR }
-            }
-        },
-        [PlaybackState.PLAYING]: {
-            entry: 'resumeAudio',
-            on: {
-                TOGGLE: { target: PlaybackState.PAUSED },
-                OS_SUSPEND: { target: PlaybackState.PAUSED },
-                PLAY: { 
-                    target: PlaybackState.BUFFERING,
-                    actions: 'assignPlayData'
-                },
-                STOP: { 
-                    target: PlaybackState.IDLE, 
-                    actions: ['stopAudio', assign({ activeChunkId: null })] 
-                },
-                ENDED: { target: PlaybackState.IDLE },
-                CLEAR_CACHE: { actions: 'clearBuffers' }
-            }
-        },
-        [PlaybackState.PAUSED]: {
-            entry: 'suspendAudio',
-            on: {
-                TOGGLE: { target: PlaybackState.PLAYING },
-                PLAY: { 
-                    target: PlaybackState.BUFFERING,
-                    actions: 'assignPlayData'
-                },
-                STOP: { 
-                    target: PlaybackState.IDLE,
-                    actions: ['stopAudio', assign({ activeChunkId: null })]
-                },
-                CLEAR_CACHE: { actions: 'clearBuffers' }
-            }
-        },
-        [PlaybackState.ERROR]: {
-            on: {
-                PLAY: { target: PlaybackState.INITIALIZING, actions: 'assignPlayData' },
-                STOP: { target: PlaybackState.IDLE }
-            }
-        }
-    }
-});
 
 export class AudioPlaybackService {
-    private onProgress: ProgressCallback | null = null;
-    private onEnded: EndedCallback | null = null;
-    public actor: Actor<typeof playbackMachine>;
+    // [OPTIMIZATION: GAPLESS PLAYBACK]
+    // Double-buffering architecture. While one audio element plays,
+    // the inactive one can decode the next file in the background.
+    private channels: AudioChannel[] = [
+        { audio: new Audio(), url: null, hash: null },
+        { audio: new Audio(), url: null, hash: null }
+    ];
+    private activeIndex = 0;
+
+    private get active() { return this.channels[this.activeIndex]; }
+    private get inactive() { return this.channels[1 - this.activeIndex]; }
+
+    // Callbacks
+    private onEnded: (() => void) | null = null;
+    private onProgress: ((current: number, total: number) => void) | null = null;
+    private onStateChange: ((state: PlaybackState) => void) | null = null;
 
     constructor() {
-        const machineWithImpls = playbackMachine.provide({
-            guards: {
-                hasPendingPlay: ({ context }) => context.pendingBlob !== null
-            },
-            actions: {
-                assignPlayData: assign({
-                    activeChunkId: ({ event }) => (event as any).chunkId,
-                    pendingBlob: ({ event }) => (event as any).blob,
-                    pendingOffset: ({ event }) => (event as any).offset || 0
-                }),
-                clearPendingPlayData: assign({
-                    pendingBlob: null,
-                    pendingOffset: 0
-                }),
-                resumeAudio: ({ context }) => {
-                    context.ctx?.resume();
-                    context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: false });
-                },
-                suspendAudio: ({ context }) => {
-                    context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
-                },
-                stopAudio: ({ context }) => {
-                    context.workletNode?.port.postMessage({ type: 'SET_PAUSED', paused: true });
-                    context.workletNode?.port.postMessage({ type: 'CLEAR' });
-                    context.ctx?.suspend();
-                },
-                clearBuffers: assign({
-                    bufferCache: () => new Map()
-                })
-            },
-            actors: {
-                setupAudioContext: fromPromise(async ({ input }) => {
-                    let { ctx, workletNode } = input;
-                    if (!ctx) {
-                        ctx = new AudioContext({ latencyHint: 'playback', sampleRate: 24000 });
-                        ctx.onstatechange = () => {
-                            if (ctx?.state === 'suspended') {
-                                this.actor.send({ type: 'OS_SUSPEND' });
-                            }
-                        };
-                    }
-                    if (ctx.state === 'suspended') await ctx.resume();
-                    if (!workletNode) {
-                        // Using the evaluated URL string
-                        await ctx.audioWorklet.addModule(workletUrl);
-                        workletNode = new AudioWorkletNode(ctx, 'audio-stream-processor');
-                        workletNode.connect(ctx.destination);
-                        workletNode.port.onmessage = (e: MessageEvent) => {
-                            if (e.data.type === 'PROGRESS' && this.onProgress) {
-                                this.onProgress(e.data.processedFrames / 24000, e.data.totalFrames / 24000);
-                            }
-                            if (e.data.type === 'ENDED') {
-                                this.actor.send({ type: 'ENDED' });
-                                if (this.onEnded) this.onEnded();
-                            }
-                        };
-                    }
-                    return { ctx, workletNode };
-                }),
-                decodeAndPush: fromPromise(async ({ input }: { input: any }) => {
-                    const { chunkId, blob, offset, bufferCache, ctx, workletNode } = input;
-                    if (chunkId === null || !blob) throw new Error("Missing play data");
+        // Attach identical listeners to both channels, but strictly gate their
+        // dispatches so the UI only reacts to the currently active channel.
+        this.channels.forEach((channel, index) => {
+            const { audio } = channel;
 
-                    if (bufferCache.size > MAX_BUFFER_CACHE) {
-                        bufferCache.delete(bufferCache.keys().next().value);
-                    }
+            audio.addEventListener('timeupdate', () => {
+                if (this.activeIndex === index && this.onProgress && audio.duration) {
+                    this.onProgress(audio.currentTime, audio.duration);
+                }
+            });
 
-                    let buffer = bufferCache.get(chunkId);
-                    if (!buffer) {
-                        buffer = await ctx!.decodeAudioData(await blob.arrayBuffer());
-                        bufferCache.set(chunkId, buffer);
-                    }
+            audio.addEventListener('ended', () => {
+                if (this.activeIndex === index) {
+                    this.onStateChange?.(PlaybackState.IDLE);
+                    this.onEnded?.();
+                }
+            });
 
-                    workletNode?.port.postMessage({ type: 'CLEAR' });
-                    const pcmData = buffer.getChannelData(0);
-                    const startFrame = Math.floor(offset * buffer.sampleRate);
-                    
-                    workletNode?.port.postMessage({ 
-                        type: 'PUSH_DATA', 
-                        audio: startFrame > 0 ? pcmData.slice(startFrame) : pcmData,
-                        immediate: true 
-                    });
+            audio.addEventListener('play', () => {
+                if (this.activeIndex === index) {
+                    this.onStateChange?.(PlaybackState.PLAYING);
+                }
+            });
 
-                    return { chunkId };
-                })
-            }
+            audio.addEventListener('pause', () => {
+                if (this.activeIndex === index && !audio.ended) {
+                    this.onStateChange?.(PlaybackState.PAUSED);
+                }
+            });
         });
-
-        this.actor = createActor(machineWithImpls).start();
     }
 
-    public bind(onProgress: ProgressCallback, onEnded: EndedCallback) {
+    public bind(
+        onProgress: (c: number, d: number) => void,
+        onEnded: () => void,
+        onStateChange: (state: PlaybackState) => void
+    ) {
         this.onProgress = onProgress;
         this.onEnded = onEnded;
+        this.onStateChange = onStateChange;
     }
 
-    public async hydrate() { 
-        this.actor.send({ type: 'HYDRATE' }); 
-    }
-    
-    public playChunk(chunkId: number, blob: Blob, offset: number = 0) {
-        this.actor.send({ type: 'PLAY', chunkId, blob, offset });
+    public initContext() {
+        // Preserved for interface compatibility
     }
 
-    public async queueNextChunk(chunkId: number, blob: Blob) {
-        const { ctx, bufferCache } = this.actor.getSnapshot().context;
-        if (!ctx) return;
-        if (bufferCache.has(chunkId)) return;
+    public async playChunk(hash: string, blob: Blob, rate: number = 1.0) {
         try {
-            if (bufferCache.size > MAX_BUFFER_CACHE) {
-                bufferCache.delete(bufferCache.keys().next().value!);
+            if (blob.size === 0) throw new Error("Empty audio blob");
+
+            // SCENARIO A: The exact chunk we want was preloaded into the inactive channel!
+            // We just swap the active index and hit play. Instantaneous playback.
+            if (this.inactive.hash === hash) {
+                this.active.audio.pause();
+                this.activeIndex = 1 - this.activeIndex;
+
+                // Re-assert both speed properties to override browser defaults
+                this.active.audio.defaultPlaybackRate = rate;
+                this.active.audio.playbackRate = rate;
+
+                await this.active.audio.play();
+                return;
             }
-            const buffer = await ctx.decodeAudioData(await blob.arrayBuffer());
-            bufferCache.set(chunkId, buffer);
+
+            // SCENARIO B: User restarted the currently active chunk.
+            if (this.active.hash === hash && this.active.url) {
+                this.active.audio.currentTime = 0;
+                this.active.audio.defaultPlaybackRate = rate;
+                this.active.audio.playbackRate = rate;
+                await this.active.audio.play();
+                return;
+            }
+
+            // SCENARIO C: Cache miss (user jumped to a random point). Load normally.
+            this.active.audio.pause();
+
+            if (this.active.url) URL.revokeObjectURL(this.active.url);
+            this.active.url = URL.createObjectURL(blob);
+            this.active.hash = hash;
+
+            this.active.audio.src = this.active.url;
+
+            // Hard apply rate bounds
+            this.active.audio.defaultPlaybackRate = rate;
+            this.active.audio.playbackRate = rate;
+
+            this.active.audio.load();
+            await this.active.audio.play();
+
         } catch (e) {
-            logger.error('PlaybackService', 'Preload decode failed', e);
+            logger.error('AudioPlayback', 'Failed to play HTML audio', e);
+            this.stop();
         }
+    }
+
+    /**
+     * [OPTIMIZATION] Loads a blob into the background audio element so the
+     * browser can decode the file while the current chunk is still playing.
+     */
+    public preloadChunk(hash: string, blob: Blob) {
+        try {
+            if (this.inactive.hash === hash) return; // Already ready
+            if (this.active.hash === hash) return;   // Currently playing
+
+            if (this.inactive.url) URL.revokeObjectURL(this.inactive.url);
+
+            this.inactive.url = URL.createObjectURL(blob);
+            this.inactive.hash = hash;
+
+            this.inactive.audio.src = this.inactive.url;
+            this.inactive.audio.load(); // Forces background metadata parse/decode
+        } catch (e) {
+            logger.warn('AudioPlayback', 'Failed to preload chunk', e);
+        }
+    }
+
+    public setRate(rate: number) {
+        this.active.audio.defaultPlaybackRate = rate;
+        this.active.audio.playbackRate = rate;
+    }
+
+    public toggle() {
+        if (this.active.audio.paused) {
+            if (this.active.audio.src) this.active.audio.play();
+        } else {
+            this.active.audio.pause();
+        }
+    }
+
+    public stop() {
+        this.active.audio.pause();
+        this.active.audio.currentTime = 0;
+        this.onStateChange?.(PlaybackState.IDLE);
     }
 
     public clearBufferCache() {
-        this.actor.send({ type: 'CLEAR_CACHE' });
+        this.channels.forEach(channel => {
+            if (channel.url) {
+                URL.revokeObjectURL(channel.url);
+                channel.url = null;
+                channel.hash = null;
+            }
+        });
     }
-
-    public toggle() { this.actor.send({ type: 'TOGGLE' }); }
-    public stop() { this.actor.send({ type: 'STOP' }); }
-    public get state(): PlaybackState { return this.actor.getSnapshot().value as PlaybackState; }
 }
 
 export const audioPlaybackService = new AudioPlaybackService();

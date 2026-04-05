@@ -1,5 +1,5 @@
 import * as Comlink from 'comlink';
-import IngestWorker from '../workers/ingest.worker?worker'; 
+import IngestWorker from '../workers/ingest.worker?worker';
 import type { Chunk } from '../types/schema';
 
 export interface ImportResult {

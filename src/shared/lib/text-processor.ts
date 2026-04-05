@@ -1,15 +1,5 @@
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 
-/**
- * Text Processing Service (V3)
- * Focused on Prosody-First chunking for TTS using LangChain.
- */
-
-/**
- * [CRITICAL: ISSUE 2 FIX] Hash generation now optionally accepts a voice identifier.
- * This ensures that the same text with a different voice produces a different 
- * cache key, preventing incorrect audio playback after voice settings change.
- */
 export function hashText(str: string, voiceId?: string): string {
   let combined = voiceId ? `${voiceId}:${str}` : str;
   let hash = 5381;
@@ -33,7 +23,7 @@ export async function chunkText(text: string, maxChunkSize = 400): Promise<strin
     });
 
     const output = await splitter.createDocuments([normalized]);
-    
+
     return output
         .map(doc => doc.pageContent.trim())
         .filter(content => content.length > 0);

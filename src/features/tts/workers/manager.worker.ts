@@ -16,7 +16,7 @@ const managerMachine = createMachine({
     states: {
         idle: {
             on: {
-                START: { 
+                START: {
                     target: 'initializing',
                     actions: assign({ activeModelId: ({ event }) => (event as any).modelId })
                 },
@@ -35,10 +35,10 @@ const managerMachine = createMachine({
             invoke: {
                 src: 'findJob',
                 onDone: [
-                    { 
-                        target: 'processing', 
-                        guard: ({ event }) => !!event.output, 
-                        actions: assign({ currentJob: ({ event }) => event.output }) 
+                    {
+                        target: 'processing',
+                        guard: ({ event }) => !!event.output,
+                        actions: assign({ currentJob: ({ event }) => event.output })
                     },
                     { target: 'sleeping' }
                 ],
@@ -50,14 +50,14 @@ const managerMachine = createMachine({
                 src: 'executeJob',
                 input: ({ context }) => context.currentJob,
                 onDone: { target: 'checking', actions: assign({ consecutiveErrors: 0 }) },
-                onError: { 
+                onError: {
                     target: 'sleeping', // Sleep briefly on error to prevent CPU thrashing loop
-                    actions: assign({ consecutiveErrors: ({ context }) => context.consecutiveErrors + 1 }) 
+                    actions: assign({ consecutiveErrors: ({ context }) => context.consecutiveErrors + 1 })
                 }
             }
         },
         sleeping: {
-            after: { 2000: 'checking' }, 
+            after: { 2000: 'checking' },
             on: { POKE: 'checking' }
         },
         error_cooldown: {
@@ -86,28 +86,28 @@ const managerMachine = createMachine({
         executeJob: fromPromise(async ({ input }: any) => {
             const job = input;
             if (!job) throw new Error("No job provided");
-            
+
             const startTime = Date.now();
             const waitTime = startTime - job.createdAt.getTime();
-            
+
             logger.debug('JobQueue', `Dequeued Job [${job.chunkId}]`, { waitTimeMs: waitTime });
-            
+
             await db.jobs.update(job.id!, { status: 'processing', updatedAt: new Date() });
-            
+
             try {
                 await AudioGenerationService.generate(job.chunkId);
                 await db.jobs.delete(job.id!);
-                
+
                 const execTime = Date.now() - startTime;
-                logger.info('JobQueue', `Job [${job.chunkId}] Completed`, { 
-                    execTimeMs: execTime, 
-                    totalTimeMs: waitTime + execTime 
+                logger.info('JobQueue', `Job [${job.chunkId}] Completed`, {
+                    execTimeMs: execTime,
+                    totalTimeMs: waitTime + execTime
                 });
             } catch (e) {
                 logger.error('JobQueue', `Job [${job.chunkId}] Failed`, e);
                 // Mark as failed so it drops out of the pending queue and prevents infinite loops
                 await db.jobs.update(job.id!, { status: 'failed', updatedAt: new Date() });
-                throw e; 
+                throw e;
             }
         })
     }

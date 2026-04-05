@@ -41,11 +41,10 @@ export class MemoryStorageService implements StorageService {
     keysToDelete.forEach(k => this.files.delete(k));
   }
 
-  // [EPIC 1] List implementation for memory mapping
   async listDirectory(path: string): Promise<string[]> {
       const files: string[] = [];
       const prefix = path.endsWith('/') ? path : `${path}/`;
-      
+
       for (const key of this.files.keys()) {
           if (key.startsWith(prefix)) {
               files.push(key.replace(prefix, ''));

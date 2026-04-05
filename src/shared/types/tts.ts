@@ -16,33 +16,33 @@ export interface TTSWorkerApi {
 }
 
 export const AVAILABLE_MODELS: TTSModelDef[] = [
-  { 
-    id: 'kokoro-perf', 
-    name: 'Kokoro Performance', 
-    provider: 'kokoro', 
+  {
+    id: 'kokoro-perf',
+    name: 'Kokoro Performance',
+    provider: 'kokoro',
     description: '8-bit Quantized. Very fast, lower RAM usage.',
     config: { dtype: 'q8' }
   },
-  { 
-    id: 'kokoro-balanced', 
-    name: 'Kokoro Balanced', 
-    provider: 'kokoro', 
+  {
+    id: 'kokoro-balanced',
+    name: 'Kokoro Balanced',
+    provider: 'kokoro',
     description: 'Standard precision. Good for most modern laptops.',
     config: { dtype: 'base' }
   },
-  { 
-    id: 'kokoro-high', 
-    name: 'Kokoro High Quality', 
-    provider: 'kokoro', 
+  {
+    id: 'kokoro-high',
+    name: 'Kokoro High Quality',
+    provider: 'kokoro',
     description: 'FP16 Precision. Best audio quality, requires more GPU/CPU.',
     config: { dtype: 'fp16' }
   },
-  { 
-    id: 'debug-sine', 
-    name: 'Debug (Instant)', 
-    provider: 'dummy', 
+  {
+    id: 'debug-sine',
+    name: 'Debug (Instant)',
+    provider: 'dummy',
     description: 'Generates a beep instantly. Use to test app features.',
-    config: { dtype: 'base' } 
+    config: { dtype: 'base' }
   }
 ];
 

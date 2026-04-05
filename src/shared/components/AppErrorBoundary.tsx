@@ -3,9 +3,9 @@ import type { ErrorInfo, ReactNode } from 'react';
 import { AlertCircle, RotateCcw } from 'lucide-react';
 import { logger } from '../services/Logger';
 
-interface Props { 
-    children: ReactNode; 
-    name: string; 
+interface Props {
+    children: ReactNode;
+    name: string;
     fallback?: ReactNode;
 }
 interface State { hasError: boolean; error: Error | null; }
@@ -40,7 +40,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           <p className="text-[11px] text-muted-foreground mt-1 mb-4 max-w-xs font-mono">
             {this.state.error?.message.slice(0, 100)}...
           </p>
-          <button 
+          <button
             onClick={this.handleReset}
             className="flex items-center gap-2 bg-secondary text-secondary-foreground px-4 py-1.5 rounded text-xs font-bold hover:bg-secondary/80 transition-all border border-border"
           >

@@ -7,14 +7,9 @@ import { IngestWorkerSchema } from '../types/schema';
 import { logger } from '../services/Logger';
 import { db } from '../db';
 
-/**
- * IngestWorker (Epic 2 Upgrade - Streaming Ingestion)
- * Completely refactored to parse large PDFs iteratively to prevent OOM
- * and flush database entries in reasonable bounded batches.
- */
 class IngestWorker {
     async processFile(file: File, projectId: number, afterOrderIndex?: number, onProgress?: (p: number, text: string) => void) {
-        // [STABILITY] Validated strictly. Using raw object bypasses Comlink proxy signature mismatch.
+        // Validated strictly. Using raw object bypasses Comlink proxy signature mismatch.
         IngestWorkerSchema.processFile.parse({ file, projectId, afterOrderIndex });
 
         let rawChunks: string[] = [];
@@ -24,7 +19,7 @@ class IngestWorker {
                 const arrayBuffer = await file.arrayBuffer();
                 const pdf = await getDocumentProxy(new Uint8Array(arrayBuffer));
                 const numPages = pdf.numPages;
-                
+
                 if (onProgress) onProgress(5, `Extracting 0/${numPages} pages...`);
 
                 // Read pages lazily, stream chunks to reduce string allocation ceiling
@@ -32,7 +27,7 @@ class IngestWorker {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
                     const text = textContent.items.map((s: any) => s.str).join(' ');
-                    
+
                     const pageChunks = await chunkText(text);
                     rawChunks.push(...pageChunks);
 
@@ -71,7 +66,7 @@ class IngestWorker {
             const chunkCount = await db.chunks.where('projectId').equals(projectId).count();
             const startIndex = afterOrderIndex !== undefined ? afterOrderIndex + 1 : chunkCount;
 
-            // [EPIC 4] Shift existing chunks downward if inserting into middle of project
+            // Shift existing chunks downward if inserting into middle of project
             if (afterOrderIndex !== undefined) {
                 const shiftAmount = totalChunks + 1; // +1 for the heading
                 await db.chunks
@@ -104,7 +99,7 @@ class IngestWorker {
                 createdAt: now
             });
 
-            // [EPIC 2] Batch flush DB arrays
+            // Batch flush DB arrays
             for (let i = 0; i < totalChunks; i += BATCH_SIZE) {
                 const batch = rawChunks.slice(i, i + BATCH_SIZE);
                 const chunksToAdd = batch.map((content, idx) => ({
@@ -119,7 +114,7 @@ class IngestWorker {
                 }));
 
                 const chunkIds = await db.chunks.bulkAdd(chunksToAdd, { allKeys: true });
-                
+
                 const jobs = (chunkIds as number[]).map(id => ({
                     chunkId: id,
                     projectId,

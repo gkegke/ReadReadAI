@@ -4,11 +4,6 @@ import { useProjectStore } from '../../../shared/store/useProjectStore';
 import { useProjectChunkIds } from '../../../shared/hooks/useQueries';
 import { useServices } from '../../../shared/context/ServiceContext';
 
-/**
- * useKeyboardShortcuts
- * [REFACTOR] Removed Power User Cmd+K. 
- * Focused purely on playback ergonomics (Space, J, K).
- */
 export const useKeyboardShortcuts = () => {
     const { activeProjectId } = useProjectStore();
     const { activeChunkId, setActiveChunkId } = useAudioStore();
@@ -20,11 +15,9 @@ export const useKeyboardShortcuts = () => {
             // Ignore if user is typing in an input, textarea, or contentEditable
             const target = e.target as HTMLElement;
             const isInput = ['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable;
-            
+
             if (isInput && e.key !== 'Escape') return;
 
-            // [DELETED] Command Palette Trigger
-            
             if (!chunkIds || chunkIds.length === 0) return;
 
             const currentIndex = activeChunkId ? chunkIds.indexOf(activeChunkId) : -1;

@@ -5,7 +5,7 @@
   <br />
 
   <h1>🎧 ReadRead Studio</h1>
-  
+
   <p><strong>A 100% Local, Browser-Based AI Text-to-Speech Studio</strong></p>
 
   [![Live Demo](https://img.shields.io/badge/Live_Demo-read--read--ai.vercel.app-000000?style=for-the-badge&logo=vercel)](https://read-read-ai.vercel.app)
@@ -19,9 +19,9 @@
 
 ## 📖 Overview
 
-**ReadRead Studio** is a privacy-first, fully offline AI voice generation application. It allows users to import large documents (PDF, TXT, HTML) and synthesize high-fidelity, human-like audio directly on their device. 
+**ReadRead Studio** is a privacy-first, fully offline AI voice generation application. It allows users to import large documents (PDF, TXT, HTML) and synthesize high-fidelity, human-like audio directly on their device.
 
-**Zero cloud. Zero latency. Absolute privacy.** 
+**Zero cloud. Zero latency. Absolute privacy.**
 
 By leveraging WebAssembly (ONNX Runtime) and the Origin Private File System (OPFS), this Progressive Web App (PWA) brings desktop-class ML processing directly into the browser without requiring a backend server.
 
@@ -57,7 +57,7 @@ I strongly believe in using industry standards and battle-tested libraries as th
 Building a desktop-grade ML application in the browser requires bypassing standard web limitations. Here are a few technical hurdles overcome in this project:
 
 ### 1. WebAssembly Memory Management & OOM Prevention
-Running heavy 8-bit or FP16 quantized AI models in the browser is notoriously crash-prone due to WASM memory limits. 
+Running heavy 8-bit or FP16 quantized AI models in the browser is notoriously crash-prone due to WASM memory limits.
 * **Solution**: Implemented robust **Worker Tearing**. Heavy inferences are offloaded to dedicated Web Workers. Using a custom `WorkerFactory`, threads are aggressively torn down and recreated between heavy loads to force garbage collection and flush WASM memory contexts, completely preventing OOM (Out of Memory) crashes.
 
 ### 2. Gapless Audio Streaming via AudioWorklets

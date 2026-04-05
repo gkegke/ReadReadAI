@@ -5,6 +5,7 @@ import { hashText, chunkText } from '../../../shared/lib/text-processor';
 import { StorageQuotaService } from '../../../shared/services/storage/StorageQuotaService';
 import { logger } from '../../../shared/services/Logger';
 import { audioPlaybackService } from '../services/AudioPlaybackService';
+import { jobQueueManager } from '../../tts/services/JobQueueManager';
 
 class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
     constructor() {
@@ -50,8 +51,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             }
             await db.chunks.bulkDelete(chunkIds);
             await db.jobs.where('chunkId').anyOf(chunkIds).delete();
-            
-            // Re-order remaining chunks
+
             const remaining = await db.chunks.where('projectId').equals(projectId).sortBy('orderInProject');
             for (let i = 0; i < remaining.length; i++) {
                 await db.chunks.update(remaining[i].id!, { orderInProject: i });
@@ -62,12 +62,14 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
     async bulkRegenerate(projectId: number, chunkIds: number[]): Promise<void> {
         await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+            // Delete existing jobs first to prevent double-queuing
+            await db.jobs.where('chunkId').anyOf(chunkIds).delete();
+
             const chunks = await db.chunks.where('id').anyOf(chunkIds).toArray();
-            
             for (const chunk of chunks) {
+                // If it already has audio, mark for deletion to free space
                 if (chunk.generatedFilePath) {
                     await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
-                    await db.audioCache.delete(chunk.cleanTextHash);
                 }
 
                 await db.chunks.update(chunk.id!, {
@@ -79,7 +81,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 await this.ensureJob(chunk.id!, projectId, 10);
             }
         });
+
         StorageQuotaService.processOrphanQueue();
+        jobQueueManager.poke();
     }
 
     async clearProjectAudio(projectId: number): Promise<void> {
@@ -92,21 +96,20 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             for (const chunk of chunks) {
                 if (chunk.generatedFilePath) {
                     await orphanTable.add({ path: chunk.generatedFilePath, createdAt: new Date() });
-                    await db.audioCache.delete(chunk.cleanTextHash);
                 }
-                
+
                 await db.chunks.update(chunk.id!, {
                     status: 'pending',
                     generatedFilePath: null,
                     updatedAt: new Date()
                 });
             }
-            
+
             await db.jobs.where('projectId').equals(projectId).delete();
         });
-        
+
         StorageQuotaService.processOrphanQueue();
-        logger.info('ChunkRepository', `Cleared all audio and memory buffers for project ${projectId}`);
+        logger.info('ChunkRepository', `Cleared all audio for project ${projectId}`);
     }
 
     async queueMissing(projectId: number, fromOrderIndex: number = 0): Promise<void> {
@@ -121,6 +124,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                 await db.chunks.update(chunk.id!, { status: 'pending', updatedAt: new Date() });
             }
         });
+        jobQueueManager.poke();
     }
 
     async insertBlock(text: string, projectId: number, afterOrderIndex: number, role: 'heading' | 'paragraph' = 'paragraph'): Promise<void> {
@@ -151,9 +155,10 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
                     updatedAt: now
                 }) as number;
 
-                await this.ensureJob(newId, projectId, 100); 
+                await this.ensureJob(newId, projectId, 100);
             }
         });
+        jobQueueManager.poke();
     }
 
     async updateText(chunkId: number, newText: string): Promise<void> {
@@ -163,10 +168,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
         const project = await db.projects.get(chunk.projectId);
         const voiceId = project?.voiceSettings?.voiceId;
 
-        await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+        await db.transaction('rw', [db.chunks, db.jobs, 'orphanedFiles'], async () => {
             if (chunk.generatedFilePath) {
                 await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
-                await db.audioCache.delete(chunk.cleanTextHash);
             }
 
             await db.chunks.update(chunkId, {
@@ -179,6 +183,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await this.ensureJob(chunkId, chunk.projectId, 50);
         });
         StorageQuotaService.processOrphanQueue();
+        jobQueueManager.poke();
     }
 
     async splitChunk(chunkId: number, cursorIndex: number): Promise<void> {
@@ -193,10 +198,9 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
         if (!firstPart || !secondPart) return;
 
-        await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+        await db.transaction('rw', [db.chunks, db.jobs, 'orphanedFiles'], async () => {
             if (chunk.generatedFilePath) {
                 await db.table('orphanedFiles').add({ path: chunk.generatedFilePath, createdAt: new Date() });
-                await db.audioCache.delete(chunk.cleanTextHash);
             }
 
             await db.chunks
@@ -215,7 +219,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
             const newChunkId = await db.chunks.add({
                 projectId: chunk.projectId,
-                role: 'paragraph', 
+                role: 'paragraph',
                 orderInProject: chunk.orderInProject + 1,
                 textContent: secondPart,
                 cleanTextHash: hashText(secondPart, voiceId),
@@ -227,6 +231,7 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await this.ensureJob(newChunkId, chunk.projectId, 80);
         });
         StorageQuotaService.processOrphanQueue();
+        jobQueueManager.poke();
     }
 
     async mergeWithNext(chunkId: number): Promise<void> {
@@ -243,19 +248,17 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
 
         if (!chunkB) return;
 
-        await db.transaction('rw', [db.chunks, db.jobs, db.audioCache, 'orphanedFiles'], async () => {
+        await db.transaction('rw', [db.chunks, db.jobs, 'orphanedFiles'], async () => {
             const orphanTable = db.table('orphanedFiles');
             if (chunkA.generatedFilePath) {
                 await orphanTable.add({ path: chunkA.generatedFilePath, createdAt: new Date() });
-                await db.audioCache.delete(chunkA.cleanTextHash);
             }
             if (chunkB.generatedFilePath) {
                 await orphanTable.add({ path: chunkB.generatedFilePath, createdAt: new Date() });
-                await db.audioCache.delete(chunkB.cleanTextHash);
             }
 
             const newText = `${chunkA.textContent} ${chunkB.textContent}`.trim();
-            
+
             await db.chunks.update(chunkA.id!, {
                 textContent: newText,
                 cleanTextHash: hashText(newText, voiceId),
@@ -275,14 +278,15 @@ class ChunkRepositoryImpl extends BaseRepository<Chunk, typeof ChunkSchema> {
             await this.ensureJob(chunkA.id!, chunkA.projectId, 50);
         });
         StorageQuotaService.processOrphanQueue();
+        jobQueueManager.poke();
     }
 
     private async ensureJob(chunkId: number, projectId: number, priority: number) {
         const existingJob = await db.jobs.where('chunkId').equals(chunkId).first();
         if (existingJob) {
-            await db.jobs.update(existingJob.id!, { 
-                status: 'pending', 
-                priority: Math.max(existingJob.priority, priority) 
+            await db.jobs.update(existingJob.id!, {
+                status: 'pending',
+                priority: Math.max(existingJob.priority, priority)
             });
         } else {
             await db.jobs.add({

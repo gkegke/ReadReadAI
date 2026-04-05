@@ -2,7 +2,7 @@ import { Muxer, ArrayBufferTarget } from 'webm-muxer';
 import { logger } from '../services/Logger';
 
 /**
- * AudioEncoder Service (V4)
+ * AudioEncoder Service
  * Handles fast internal WAV wrapping and compressed Opus export.
  */
 export class AudioEncoderService {

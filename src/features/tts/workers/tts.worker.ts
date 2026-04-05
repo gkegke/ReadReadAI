@@ -10,7 +10,7 @@ class TTSWorkerImpl {
     private calculatePeaks(samples: Float32Array, numPeaks: number = 120): number[] {
         const step = Math.floor(samples.length / numPeaks);
         const peaks: number[] =[];
-        
+
         for (let i = 0; i < numPeaks; i++) {
             let max = 0;
             const start = i * step;
@@ -24,7 +24,7 @@ class TTSWorkerImpl {
     }
 
     public async initModel(
-        modelId: string, 
+        modelId: string,
         _unused: any,
         onProgress: (phase: string, percent: number) => void
     ): Promise<{ modelId: string, voices: {id: string, name: string}[] }> {
@@ -59,17 +59,17 @@ class TTSWorkerImpl {
 
         this.currentModelId = modelId;
         const voices = this.currentEngine.getVoices();
-        
+
         onProgress('Ready', 100);
         return { modelId, voices };
     }
 
     public async generate(
-        text: string, 
-        config: ModelConfig, 
+        text: string,
+        config: ModelConfig,
         filepath: string
     ): Promise<{ byteSize: number, peaks: number[], blob?: Blob }> {
-        
+
         TTSWorkerSchema.generate.parse({ text, config, filepath });
         if (!this.currentEngine) throw new Error("Engine not initialized");
 

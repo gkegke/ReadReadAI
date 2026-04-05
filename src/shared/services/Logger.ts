@@ -2,13 +2,9 @@ import { db } from '../db';
 import type { LogSeverity, LogEntry } from '../types/schema';
 import { useSystemStore } from '../store/useSystemStore';
 
-/**
- * LoggerService (V4 - Structured & Observability Focused)
- * Captures system telemetry and provides a "Diagnostic Bundle" for Zero-Cloud support.
- */
 class LoggerService {
     private readonly MAX_LOGS = 5000;
-    private memoryLogs: LogEntry[] = []; // [EPIC 1] In-memory buffer for real-time UI updates
+    private memoryLogs: LogEntry[] = [];
 
     async log(severity: LogSeverity, component: string, message: string, context?: Record<string, any>) {
         const entry: LogEntry = {
@@ -41,9 +37,6 @@ class LoggerService {
         }
     }
 
-    /**
-     * [EPIC 1] Returns the most recent logs for UI display.
-     */
     getRecentLogs(count: number = 5): LogEntry[] {
         return this.memoryLogs.slice(0, count);
     }
@@ -89,7 +82,7 @@ class LoggerService {
             telemetry: await this.getDiagnosticBundle(),
             logs: await db.logs.orderBy('timestamp').reverse().limit(1000).toArray()
         };
-        
+
         const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

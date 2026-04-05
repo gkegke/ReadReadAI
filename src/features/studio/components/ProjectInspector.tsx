@@ -1,224 +1,144 @@
 import React, { useMemo } from 'react';
+import { useUIStore } from '../../../shared/store/useUIStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
+import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useSystemStore } from '../../../shared/store/useSystemStore';
-import { useProjectChunks, useDetailedJobStatus } from '../../../shared/hooks/useQueries';
-import { ProjectProgressMap } from '../../library/components/ProjectProgressMap';
-import { SettingsMenu } from './SettingsMenu';
+import { useProjectChunks } from '../../../shared/hooks/useQueries';
 import { VoiceSelector } from './VoiceSelector';
-import { ProjectRepository } from '../../library/api/ProjectRepository';
-import { AVAILABLE_MODELS } from '../../../shared/types/tts';
-import { ttsService } from '../../tts/services/TTSService';
-import { useQueueMissingChunksMutation, useClearProjectAudioMutation } from '../../../shared/hooks/useMutations';
-import { useServices } from '../../../shared/context/ServiceContext';
+import { ExportDialog } from './ExportDialog';
+import { deriveChapters, calculateChapterVisibility } from '../../../shared/lib/chapterUtils';
 import { cn } from '../../../shared/lib/utils';
-import { 
-    Download, 
-    Cpu, 
-    AlignLeft,
-    Layers,
-    Loader2,
-    CheckSquare,
-    Square,
-    Zap,
-    Trash2,
-    PauseCircle,
-    PlayCircle,
-    X
+import { AVAILABLE_MODELS } from '../../../shared/types/tts';
+import {
+    Layers, AlignLeft, Gauge, ChevronDown, ChevronRight
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../../shared/components/ui/select';
-import { Button } from '../../../shared/components/ui/button';
+import { useServices } from '../../../shared/context/ServiceContext';
 
 export const ProjectInspector: React.FC = () => {
-    const { activeProjectId, setScrollToChunkId, isExporting, isSelectionMode, setSelectionMode, isInspectorOpen, setInspectorOpen } = useProjectStore();
-    const { data: chunks } = useProjectChunks(activeProjectId);
+    const { isInspectorOpen, userToggledChapters, toggleChapterManual } = useUIStore();
+    const { activeProjectId, setScrollToChunkId } = useProjectStore();
+    const { activeChunkId, playbackRate, setPlaybackSpeed } = useAudioStore();
     const { activeModelId, setActiveModelId } = useSystemStore();
-    
-    const { mutate: queueMissing, isPending: isQueueing } = useQueueMissingChunksMutation();
-    const { mutate: clearAudio, isPending: isClearing } = useClearProjectAudioMutation();
-    const { queue } = useServices();
-    
-    const { active: activeJobs, pendingCount } = useDetailedJobStatus(activeProjectId);
-    const queueState = queue.getStatus();
+    const { tts } = useServices();
 
-    const headings = useMemo(() => {
-        return chunks.filter(c => c.role === 'heading');
-    }, [chunks]);
+    const { data: chunks = [] } = useProjectChunks(activeProjectId);
+    const chapters = useMemo(() => deriveChapters(chunks), [chunks]);
 
-    if (!activeProjectId) return null;
+    const isLargeProject = chunks.length > 150;
 
-    const handleModelChange = (val: string) => {
-        setActiveModelId(val);
-        ttsService.loadModel(val);
-    };
-
-    const handleGenerateAll = () => {
-        queueMissing({ projectId: activeProjectId }, {
-            onSuccess: () => queue.poke()
-        });
+    const handleModelChange = async (id: string) => {
+        setActiveModelId(id);
+        await tts.loadModel(id);
     };
 
     return (
-        <>
-            {/* [RESPONSIVE] Mobile Backdrop Overlay */}
-            <div 
-                className={cn(
-                    "fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden transition-opacity duration-300",
-                    isInspectorOpen ? "opacity-100" : "opacity-0 pointer-events-none"
-                )}
-                onClick={() => setInspectorOpen(false)}
-            />
-
-            <aside className={cn(
-                "fixed inset-y-0 right-0 z-50 flex flex-col bg-background/95 md:bg-background/50 backdrop-blur-xl border-border shadow-2xl transition-all duration-300 ease-in-out overflow-hidden",
-                "md:relative md:z-0 md:shadow-none",
-                isInspectorOpen 
-                    ? "translate-x-0 w-72 md:w-64 border-l" 
-                    : "translate-x-full md:translate-x-0 w-72 md:w-0 border-l-0"
-            )}>
-                {/* 
-                  [UX] Fixed width wrapper ensures contents don't wrap/squish 
-                  during the width transition on desktop layouts.
-                */}
-                <div className="w-72 md:w-64 flex flex-col h-full shrink-0">
-                    <div className="p-4 border-b border-border/50 bg-secondary/10 space-y-3">
-                        <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                                <Layers className="w-4 h-4 text-muted-foreground" />
-                                <span className="text-[11px] font-black uppercase tracking-widest text-foreground">Inspector</span>
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <SettingsMenu />
-                                <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="md:hidden w-8 h-8 text-muted-foreground hover:bg-secondary" 
-                                    onClick={() => setInspectorOpen(false)}
-                                    title="Close Inspector"
-                                >
-                                    <X className="w-4 h-4" />
-                                </Button>
-                            </div>
+        <aside className={cn(
+            "z-40 h-full flex flex-col bg-background border-l transition-all duration-300 overflow-hidden shrink-0",
+            isInspectorOpen ? "w-80" : "w-0 border-none"
+        )}>
+            <div className="w-80 flex flex-col h-full shrink-0 overflow-hidden">
+                <div className="p-4 h-14 border-b flex items-center justify-between bg-secondary/10">
+                    <div className="flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-primary" />
+                        <span className="text-[10px] font-black uppercase tracking-widest">Inspector</span>
+                    </div>
+                    {isLargeProject && (
+                        <div className="flex items-center gap-1 bg-amber-500/10 text-amber-600 px-2 py-1 rounded-full text-[8px] font-black uppercase">
+                            <Gauge className="w-2.5 h-2.5" /> Performance Mode
                         </div>
+                    )}
+                </div>
 
+                <div className="flex-1 overflow-y-auto">
+                    {/* TTS Configuration Section */}
+                    <div className="p-4 border-b space-y-4">
+                        <div className="flex flex-col gap-1.5">
+                            <span className="text-[9px] font-black uppercase text-muted-foreground">TTS Engine</span>
+                            <Select value={activeModelId} onValueChange={handleModelChange}>
+                                <SelectTrigger className="h-9 text-[10px] font-bold uppercase">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {AVAILABLE_MODELS.map(m => (
+                                        <SelectItem key={m.id} value={m.id}>{m.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <VoiceSelector />
                         <div className="space-y-2">
-                            <div className="flex items-center gap-1 bg-background rounded-md px-2 h-8 border border-border/50">
-                                <Cpu className="w-3 h-3 text-muted-foreground" />
-                                <Select value={activeModelId} onValueChange={handleModelChange}>
-                                    <SelectTrigger className="w-full border-none bg-transparent h-7 text-[10px] font-black uppercase tracking-tight focus:ring-0">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {AVAILABLE_MODELS.map(m => (
-                                            <SelectItem key={m.id} value={m.id} className="text-xs">{m.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="flex justify-between text-[9px] font-black uppercase text-muted-foreground">
+                                <span>Pace</span>
+                                <span>{playbackRate.toFixed(2)}x</span>
                             </div>
-
-                            <VoiceSelector />
-
-                            <div className="grid grid-cols-2 gap-2 pt-1">
-                                <Button 
-                                    variant="secondary" 
-                                    size="sm" 
-                                    onClick={handleGenerateAll}
-                                    disabled={isQueueing}
-                                    className="w-full font-black tracking-widest text-[9px] h-8 rounded-md border border-primary/20 text-primary hover:bg-primary hover:text-primary-foreground transition-colors"
-                                >
-                                    {isQueueing ? <Loader2 className="w-3 h-3 animate-spin mr-1.5" /> : <Zap className="w-3 h-3 mr-1.5" fill="currentColor" />}
-                                    GENERATE
-                                </Button>
-                                
-                                <Button 
-                                    variant="outline" 
-                                    size="sm" 
-                                    onClick={() => queueState === 'paused' ? (queue as any).resume() : queue.stop()}
-                                    className="w-full font-black tracking-widest text-[9px] h-8 rounded-md"
-                                >
-                                    {queueState === 'paused' ? <PlayCircle className="w-3.5 h-3.5 mr-1" /> : <PauseCircle className="w-3.5 h-3.5 mr-1" />}
-                                    {queueState === 'paused' ? "RESUME" : "PAUSE"}
-                                </Button>
-                            </div>
+                            <input type="range" min="0.5" max="2.0" step="0.1" value={playbackRate} onChange={(e) => setPlaybackSpeed(parseFloat(e.target.value))} className="w-full h-1 accent-primary" />
                         </div>
                     </div>
 
-                    {/* LIVE QUEUE STATUS */}
-                    <div className="px-4 py-3 border-b border-border/30 bg-primary/[0.02]">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Live Queue</span>
-                            <span className={cn(
-                                "text-[8px] px-1.5 py-0.5 rounded-full font-bold uppercase",
-                                queueState === 'paused' ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700"
-                            )}>
-                                {/* [FIX: TS2322] Cast StateValue to string for React compatibility */}
-                                {String(queueState)}
-                            </span>
-                        </div>
-
-                        <div className="space-y-2">
-                            {activeJobs.length > 0 ? (
-                                activeJobs.map(job => (
-                                    <div key={job.id} className="flex items-center gap-2 animate-pulse">
-                                        <Loader2 className="w-3 h-3 animate-spin text-primary" />
-                                        <span className="text-[10px] font-medium truncate italic text-foreground/70">
-                                            "{job.text}"
-                                        </span>
-                                    </div>
-                                ))
-                            ) : (
-                                <div className="text-[10px] text-muted-foreground opacity-50 py-1">No active synthesis...</div>
-                            )}
-                            
-                            {pendingCount > 0 && (
-                                <div className="text-[9px] font-bold text-primary/60 uppercase tracking-tighter">
-                                    + {pendingCount} chunks waiting
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <div className="px-2 pt-2 pb-4 border-b border-border/30">
-                        <ProjectProgressMap projectId={activeProjectId} />
-                    </div>
-
-                    {/* OUTLINE */}
-                    <div className="flex-1 overflow-y-auto p-2">
-                        <div className="flex items-center gap-2 px-2 py-2 mb-1">
+                    {/* Studio Map Section */}
+                    <div className="p-4">
+                        <div className="flex items-center gap-2 mb-4">
                             <AlignLeft className="w-3 h-3 text-muted-foreground" />
-                            <span className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Outline</span>
+                            <span className="text-[10px] font-black uppercase text-muted-foreground">Studio Map</span>
                         </div>
-                        <div className="space-y-0.5">
-                            {headings.map((heading) => (
-                                <button
-                                    key={heading.id}
-                                    onClick={() => {
-                                        setScrollToChunkId(heading.id!);
-                                        if (window.innerWidth < 768) setInspectorOpen(false);
-                                    }}
-                                    className="w-full flex flex-col items-start px-3 py-2 rounded-lg text-xs text-left transition-all hover:bg-secondary hover:text-foreground group text-muted-foreground"
-                                >
-                                    <span className="font-bold truncate w-full group-hover:text-primary">
-                                        {heading.textContent}
-                                    </span>
-                                </button>
-                            ))}
+
+                        <div className="space-y-2">
+                            {chapters.map((chapter, index) => {
+                                const isOpen = calculateChapterVisibility(
+                                    chapter.id,
+                                    index,
+                                    chapters,
+                                    userToggledChapters
+                                );
+
+                                const isPlayingInChapter = activeChunkId && chapter.chunks.some(c => c.id === activeChunkId);
+
+                                return (
+                                    <div key={chapter.id} className={cn(
+                                        "border rounded-xl overflow-hidden transition-all duration-300",
+                                        isPlayingInChapter ? "border-primary/40 bg-primary/[0.03]" : "border-border/40 bg-secondary/5"
+                                    )}>
+                                        <button
+                                            onClick={() => toggleChapterManual(chapter.id, !isOpen)}
+                                            className="w-full flex items-center justify-between p-3 hover:bg-secondary/10 text-left bg-transparent border-none cursor-pointer"
+                                        >
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div className={cn("w-1 h-3 rounded-full", isPlayingInChapter ? "bg-primary" : "bg-transparent")} />
+                                                <span className={cn("text-[11px] font-bold truncate", !isOpen && "text-muted-foreground")}>
+                                                    {chapter.title}
+                                                </span>
+                                            </div>
+                                            {isOpen ? <ChevronDown className="w-3 h-3 opacity-30" /> : <ChevronRight className="w-3 h-3 opacity-30" />}
+                                        </button>
+
+                                        {isOpen && (
+                                            <div className="px-3 pb-3 grid grid-cols-10 gap-1 animate-in fade-in slide-in-from-top-1 duration-200">
+                                                {chapter.chunks.map((chunk) => (
+                                                    <button
+                                                        key={chunk.id}
+                                                        onClick={() => setScrollToChunkId(chunk.id!)}
+                                                        className={cn(
+                                                            "w-full aspect-square rounded-[1px] transition-all hover:scale-125 border-none p-0 cursor-pointer",
+                                                            (chunk.id === activeChunkId && chunk.status === 'generated')? "ring-1 ring-primary ring-offset-1 bg-blue-500" :
+                                                            chunk.status === 'generated' ? "bg-green-500/50" :
+                                                            chunk.status === 'processing' ? "bg-amber-500 animate-pulse" : "bg-border/30"
+                                                        )}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
                         </div>
-                    </div>
-                    
-                    <div className="p-4 border-t border-border/50">
-                        <Button 
-                            variant="destructive" 
-                            size="sm" 
-                            onClick={() => {if(confirm("Clear audio?")) clearAudio(activeProjectId)}}
-                            disabled={isClearing}
-                            className="w-full font-black tracking-widest text-[9px] h-8 rounded-md bg-destructive/10 text-destructive hover:bg-destructive hover:text-destructive-foreground"
-                        >
-                            <Trash2 className="w-3 h-3 mr-1.5" />
-                            PURGE CACHE
-                        </Button>
                     </div>
                 </div>
-            </aside>
-        </>
+
+                <div className="p-4 border-t bg-secondary/10">
+                   <ExportDialog />
+                </div>
+            </div>
+        </aside>
     );
 };

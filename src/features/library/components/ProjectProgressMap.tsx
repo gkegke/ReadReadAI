@@ -19,10 +19,10 @@ export const ProjectProgressMap: React.FC<ProjectProgressMapProps> = ({ projectI
                     {chunks.filter(c => c.status === 'generated').length}/{chunks.length}
                 </span>
             </div>
-            
+
             <div className="grid grid-cols-10 gap-1">
                 {chunks.map((chunk, i) => (
-                    <div 
+                    <div
                         key={chunk.id || i}
                         title={`Chunk ${i + 1}: ${chunk.status}`}
                         className={cn(
@@ -37,7 +37,7 @@ export const ProjectProgressMap: React.FC<ProjectProgressMapProps> = ({ projectI
             </div>
 
             <div className="mt-2 h-1 w-full bg-secondary rounded-full overflow-hidden">
-                <div 
+                <div
                     className="h-full bg-primary transition-all duration-1000"
                     style={{ width: `${(chunks.filter(c => c.status === 'generated').length / chunks.length) * 100}%` }}
                 />

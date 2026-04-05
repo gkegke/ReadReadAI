@@ -6,7 +6,7 @@ interface G2PWorkerApi {
 }
 
 /**
- * G2PService (V4 - Standardized)
+ * G2PService
  * Uses WorkerFactory for consistent lifecycle and error recovery.
  */
 class G2PService {

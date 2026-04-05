@@ -20,10 +20,10 @@ export const useTTSStore = create<TTSState>((set) => ({
   errorMessage: null,
   availableVoices: [],
 
-  setThinking: (phase, percent) => 
+  setThinking: (phase, percent) =>
     set({ progressPhase: phase, progressPercent: percent }),
 
-  setStatus: (status, error) => 
+  setStatus: (status, error) =>
     set({ modelStatus: status, errorMessage: error || null }),
 
   setVoices: (voices) => set({ availableVoices: voices }),

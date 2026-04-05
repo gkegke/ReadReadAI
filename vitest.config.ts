@@ -19,9 +19,9 @@ export default defineConfig({
             handler: 'CacheFirst',
             options: {
               cacheName: 'readread-ai-assets-v2',
-              expiration: { 
-                maxEntries: 100, 
-                maxAgeSeconds: 60 * 60 * 24 * 90 
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 60 * 60 * 24 * 90
               },
               cacheableResponse: { statuses: [0, 200] },
             },
@@ -61,7 +61,7 @@ export default defineConfig({
   },
 
   assetsInclude:['**/*.wasm', '**/*.onnx', '**/*.bin'],
-  
+
   optimizeDeps: {
     exclude: ['onnxruntime-web']
   },

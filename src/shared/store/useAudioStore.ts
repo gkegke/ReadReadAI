@@ -1,147 +1,133 @@
 import { create } from 'zustand';
 import { audioPlaybackService, PlaybackState } from '../../features/studio/services/AudioPlaybackService';
-import { ChunkRepository } from '../../features/studio/api/ChunkRepository'; 
 import { ProjectRepository } from '../../features/library/api/ProjectRepository';
 import { storage } from '../services/storage';
-import { logger } from '../services/Logger';
-import { useProjectStore } from './useProjectStore';
-import { db } from '../db'; // [CRITICAL] Needed for first-chunk lookup
+import { db } from '../db';
+import { liveQuery } from 'dexie';
 
 interface AudioState {
+  isPlaying: boolean;
   playbackState: PlaybackState;
-  isPlaying: boolean; 
   activeChunkId: number | null;
-  playbackSpeed: number;
   currentTime: number;
   duration: number;
-  setActiveChunkId: (id: number | null) => void;
-  setPlaybackSpeed: (speed: number) => void;
+  playbackRate: number;
   togglePlay: () => void;
-  playNext: () => Promise<void>;
+  setPlaybackSpeed: (rate: number) => void;
   skipToChunk: (id: number) => Promise<void>;
+  playNext: () => Promise<void>;
   stopAll: () => void;
 }
 
 export const useAudioStore = create<AudioState>((set, get) => {
-  
-  audioPlaybackService.actor.subscribe((snapshot) => {
-      set({ 
-          playbackState: snapshot.value as PlaybackState,
-          isPlaying: snapshot.value === PlaybackState.PLAYING,
-          activeChunkId: snapshot.context.activeChunkId 
-      });
-  });
 
   audioPlaybackService.bind(
-    (currentTime: number, duration: number) => set({ currentTime, duration }),
-    () => get().playNext()
+    (currentTime, duration) => set({ currentTime, duration }),
+    () => get().playNext(),
+    (state: PlaybackState) => set({
+        playbackState: state,
+        isPlaying: state === PlaybackState.PLAYING
+    })
   );
 
   return {
-    playbackState: PlaybackState.IDLE,
     isPlaying: false,
+    playbackState: PlaybackState.IDLE,
     activeChunkId: null,
-    playbackSpeed: 1.0,
     currentTime: 0,
     duration: 0,
+    playbackRate: 1.0,
 
-    setActiveChunkId: (id) => set({ activeChunkId: id, currentTime: 0, duration: 0 }),
-    setPlaybackSpeed: (playbackSpeed) => set({ playbackSpeed }),
-    
-    /**
-     * togglePlay
-     * [FIX: ISSUE 1] If no chunk is selected, find the first chunk in the project.
-     */
+    setPlaybackSpeed: (rate: number) => {
+        set({ playbackRate: rate });
+        // Push the rate directly to the active audio engine in real-time
+        audioPlaybackService.setRate(rate);
+    },
+
     togglePlay: async () => {
         const { activeChunkId, isPlaying } = get();
-        
-        // If we have an active chunk, just toggle the transport
+        audioPlaybackService.initContext();
+
         if (activeChunkId) {
             audioPlaybackService.toggle();
-            return;
+        } else {
+            const activeProject = (await db.projects.toArray())[0]?.id;
+            if (!activeProject) return;
+            const first = await db.chunks.where('projectId').equals(activeProject).sortBy('orderInProject');
+            if (first[0]) get().skipToChunk(first[0].id!);
         }
-
-        // If no chunk is active, attempt to start from the beginning
-        const activeProject = useProjectStore.getState().activeProjectId;
-        if (!activeProject) return;
-
-        try {
-            const firstChunk = await db.chunks
-                .where('projectId').equals(activeProject)
-                .sortBy('orderInProject');
-
-            if (firstChunk && firstChunk.length > 0) {
-                const targetId = firstChunk[0].id!;
-                // Setting active ID and starting playback logic
-                await get().skipToChunk(targetId);
-                
-                // If skipToChunk didn't automatically trigger service (due to isPlaying check), force it
-                if (audioPlaybackService.state !== PlaybackState.PLAYING) {
-                    // Re-fetch blob and play
-                    const fresh = await ChunkRepository.get(targetId);
-                    if (fresh?.generatedFilePath) {
-                        const blob = await storage.readFile(fresh.generatedFilePath);
-                        audioPlaybackService.playChunk(targetId, blob);
-                    }
-                }
-            }
-        } catch (err) {
-            logger.error('AudioStore', 'Failed to toggle play from empty selection', err);
-        }
-    },
-    
-    stopAll: () => {
-        audioPlaybackService.stop();
-        set({ activeChunkId: null, isPlaying: false, currentTime: 0, duration: 0 });
     },
 
     skipToChunk: async (id: number) => {
-        // [UX] If we are skipping, we assume the user wants to hear it immediately
-        set({ activeChunkId: id, currentTime: 0, duration: 0 });
+        audioPlaybackService.initContext();
+        set({ activeChunkId: id, currentTime: 0 });
+
+        let chunk = await db.chunks.get(id);
+        if (!chunk) return;
+
+        // If the chunk isn't ready, we don't throw an error. We wait.
+        if (chunk.status !== 'generated') {
+            // Ensure generation is actually triggered
+            await ProjectRepository.ensureChunkAudio(id);
+
+            // Subscribe to this specific chunk until it's ready
+            await new Promise<void>((resolve, reject) => {
+                const observable = liveQuery(() => db.chunks.get(id)).subscribe({
+                    next: (updated) => {
+                        if (updated?.status === 'generated' && updated.generatedFilePath) {
+                            chunk = updated;
+                            observable.unsubscribe();
+                            resolve();
+                        }
+                        if (updated?.status === 'failed_tts') {
+                            observable.unsubscribe();
+                            reject(new Error("Synthesis failed"));
+                        }
+                    },
+                    error: reject
+                });
+
+                // Timeout safety: 30s limit for a single chunk
+                setTimeout(() => {
+                    observable.unsubscribe();
+                    reject(new Error("Timeout waiting for audio"));
+                }, 30000);
+            });
+        }
 
         try {
-            await ProjectRepository.ensureChunkAudio(id);
-            const fresh = await ChunkRepository.get(id);
-            if (fresh?.generatedFilePath) {
-                const blob = await storage.readFile(fresh.generatedFilePath);
-                audioPlaybackService.playChunk(id, blob);
-            }
-        } catch (e) {
-            logger.error('AudioStore', 'Manual skip failed to play', e);
+            if (!chunk?.generatedFilePath || !chunk?.cleanTextHash) throw new Error("Missing audio path");
+            const blob = await storage.readFile(chunk.generatedFilePath);
+            audioPlaybackService.playChunk(chunk.cleanTextHash, blob, get().playbackRate);
+        } catch (err) {
+            console.error("Storage read failed or wait timed out", err);
+            // Don't stopAll() immediately, allow user to see the 'failed' state on the chunk
+            set({ isPlaying: false, playbackState: PlaybackState.IDLE });
         }
     },
 
     playNext: async () => {
-      const activeProject = useProjectStore.getState().activeProjectId;
-      if (!activeProject) {
-          logger.info('AudioStore', 'Autoplay aborted: No active project.');
-          get().stopAll();
-          return;
-      }
+        const { activeChunkId } = get();
+        if (!activeChunkId) return;
 
-      const { activeChunkId } = get();
-      if (!activeChunkId) return;
+        const current = await db.chunks.get(activeChunkId);
+        if (!current) return;
 
-      const nextChunk = await ChunkRepository.getNext(activeChunkId);
-      if (nextChunk) {
-          set({ activeChunkId: nextChunk.id, currentTime: 0, duration: 0 });
-          
-          try {
-              await ProjectRepository.ensureChunkAudio(nextChunk.id!);
-              const fresh = await ChunkRepository.get(nextChunk.id!);
-              if (fresh?.generatedFilePath) {
-                  const blob = await storage.readFile(fresh.generatedFilePath);
-                  audioPlaybackService.playChunk(nextChunk.id!, blob);
-                  return;
-              }
-          } catch (e) {
-              logger.warn('AudioStore', 'Autoplay skipped due to generation failure.');
-              get().playNext();
-              return;
-          }
-      }
-      
-      get().stopAll();
+        const next = await db.chunks
+            .where('[projectId+orderInProject]')
+            .equals([current.projectId, current.orderInProject + 1])
+            .first();
+
+        if (next) {
+            get().skipToChunk(next.id!);
+        } else {
+            get().stopAll();
+        }
+    },
+
+    stopAll: () => {
+        audioPlaybackService.stop();
+        set({ isPlaying: false, activeChunkId: null, playbackState: PlaybackState.IDLE });
     }
   };
 });

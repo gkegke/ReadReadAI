@@ -11,10 +11,6 @@ import { Activity, ChevronLeft, Loader2, PanelRight } from 'lucide-react';
 import { Button } from '../../../shared/components/ui/button';
 import { cn } from '../../../shared/lib/utils';
 
-/**
- * [EPIC 2] Simplified Header.
- * Moves tools to Right Sidebar (Inspector) for extreme focus.
- */
 export const StudioHeader: React.FC = () => {
     const navigate = useNavigate();
     const { projectId } = useParams({ from: projectRoute.id });
@@ -32,7 +28,7 @@ export const StudioHeader: React.FC = () => {
     const handleTitleBlur = async () => {
         const pId = activeProjectId || parseInt(projectId);
         if (!pId || !title.trim() || title === project?.name) return;
-        
+
         setIsSaving(true);
         try {
             await ProjectRepository.update(pId, { name: title, updatedAt: new Date() });
@@ -45,9 +41,9 @@ export const StudioHeader: React.FC = () => {
         <header className="glass-header h-14 flex items-center px-4 justify-between gap-4 border-b border-border/50">
             {/* LEFT: Navigation & Context */}
             <div className="flex items-center gap-3 min-w-0">
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
+                <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => navigate({ to: '/' })}
                     className="hover:bg-secondary rounded-full w-8 h-8 shrink-0"
                 >
@@ -55,7 +51,7 @@ export const StudioHeader: React.FC = () => {
                 </Button>
 
                 <div className="flex items-center gap-2 min-w-0 overflow-hidden">
-                    <input 
+                    <input
                         value={title}
                         onChange={(e) => setTitle(e.target.value)}
                         onBlur={handleTitleBlur}
@@ -85,12 +81,12 @@ export const StudioHeader: React.FC = () => {
                     </span>
                 </div>
 
-                <Button 
-                    variant="ghost" 
-                    size="icon" 
+                <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={toggleInspector}
                     className={cn(
-                        "w-8 h-8 rounded-md transition-colors shrink-0", 
+                        "w-8 h-8 rounded-md transition-colors shrink-0",
                         isInspectorOpen ? "bg-primary/10 text-primary" : "text-muted-foreground hover:bg-secondary"
                     )}
                     title="Toggle Inspector"

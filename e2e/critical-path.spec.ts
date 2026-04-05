@@ -2,7 +2,6 @@ import { test, expect } from '@playwright/test';
 
 test.describe('Critical Path: Ingestion & Splitting', () => {
     test('Can create a project, insert text, and split it safely', async ({ page }) => {
-        // [EPIC 6] Mock Framework Seed: 
         // Overrides the active model parameter using initial state injection
         await page.addInitScript(() => {
             window.localStorage.setItem('readread-system-v1', JSON.stringify({
@@ -23,7 +22,7 @@ test.describe('Critical Path: Ingestion & Splitting', () => {
 
         // 1. Create Project via Quick Start
         await page.click('text=QUICK START');
-        
+
         // Ensure we reached the Studio UI empty state block
         const insertInput = page.locator('textarea[placeholder="Insert thoughts here..."]');
         await insertInput.waitFor({ state: 'visible', timeout: 10000 });

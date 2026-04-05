@@ -14,7 +14,7 @@ async function initializeStorageImplementation() {
     try {
       const opfs = new OpfsStorageService();
       await opfs.init(); // This will throw if OPFS is broken
-      
+
       instance = opfs;
       useSystemStore.getState().setStorageMode('opfs');
       console.log("[Storage] Using OPFS (Persistent)");
@@ -31,7 +31,7 @@ async function initializeStorageImplementation() {
 
 export const storage: StorageService = {
   init: initializeStorageImplementation,
-  
+
   // Proxy methods ensure initialization happened
   getRootHandle: async () => { await initializeStorageImplementation(); return instance!.getRootHandle(); },
   saveFile: async (p, b) => { await initializeStorageImplementation(); return instance!.saveFile(p, b); },
@@ -39,7 +39,6 @@ export const storage: StorageService = {
   exists: async (p) => { await initializeStorageImplementation(); return instance!.exists(p); },
   deleteFile: async (p) => { await initializeStorageImplementation(); return instance!.deleteFile(p); },
   deleteDirectory: async (p) => { await initializeStorageImplementation(); return instance!.deleteDirectory(p); },
-  // [CRITICAL FIX] Map the listDirectory API to the underlying instance
   listDirectory: async (p) => { await initializeStorageImplementation(); return instance!.listDirectory(p); }
 };
 

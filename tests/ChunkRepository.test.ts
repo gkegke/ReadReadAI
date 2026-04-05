@@ -23,7 +23,7 @@ describe('ChunkRepository', () => {
         await ChunkRepository.deleteChunks(1, [ids[1]]);
 
         const remaining = await db.chunks.where('projectId').equals(1).sortBy('orderInProject');
-        
+
         expect(remaining.length).toBe(2);
         expect(remaining[0].textContent).toBe('A');
         expect(remaining[0].orderInProject).toBe(0); // Kept position

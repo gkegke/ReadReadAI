@@ -7,13 +7,13 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // [STORY: TYPOGRAPHY] 
+        // [STORY: TYPOGRAPHY]
         sans: ['Geist', 'Inter', 'ui-sans-serif', 'system-ui'],
         serif: ['Newsreader', 'Georgia', 'serif'],
       },
       colors: {
-        // [CRITICAL: FIXED] 
-        // Using <alpha-value> placeholder allows Tailwind to inject opacity 
+        // [CRITICAL: FIXED]
+        // Using <alpha-value> placeholder allows Tailwind to inject opacity
         // when using the /80 syntax.
         background: "hsl(var(--background) / <alpha-value>)",
         foreground: "hsl(var(--foreground) / <alpha-value>)",

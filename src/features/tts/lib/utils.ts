@@ -6,7 +6,7 @@ import { logger } from '../../../shared/services/Logger';
 
 /**
  * Standardized Fetcher for AI Models and Assets.
- * [IMPORTANCE: 9/10] Implements retries and timeouts for large binary assets
+ * [Implements retries and timeouts for large binary assets
  * which are prone to failure on mobile/unstable connections.
  */
 export const assetClient = ky.create({
@@ -33,7 +33,7 @@ export const assetClient = ky.create({
 export async function cachedFetch(url: string): Promise<Response> {
     const cacheName = 'readread-model-cache-v1';
     const cache = await caches.open(cacheName);
-    
+
     const cachedResponse = await cache.match(url);
     if (cachedResponse) {
         return cachedResponse;
@@ -41,7 +41,7 @@ export async function cachedFetch(url: string): Promise<Response> {
 
     // Use ky for the request to get robust retry/timeout logic
     const response = await assetClient.get(url);
-    
+
     // We must clone the response before putting it in cache and returning it
     if (response.ok) {
         cache.put(url, response.clone());

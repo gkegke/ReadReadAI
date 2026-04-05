@@ -4,19 +4,18 @@ import { logger } from '../../../shared/services/Logger';
 
 /**
  * KokoroEngine
- * Refactored to support dynamic dtypes (q8, fp16, etc)
+ * Supports dynamic dtypes (q8, fp16, etc)
  */
 export class KokoroEngine extends TTSEngine {
     private tts: any = null;
 
     async init(config?: { dtype: string }): Promise<void> {
         const { KokoroTTS } = await import('kokoro-js');
-        
+
         const dtype = config?.dtype || 'q8';
         logger.info('KokoroEngine', `Initializing with precision: ${dtype}`);
 
         this.tts = await KokoroTTS.from_pretrained("onnx-community/Kokoro-82M-ONNX", {
-            /* [FIX: TS2322] Explicitly cast the dtype string to match Kokoro's expected literal union */
             dtype: (dtype === 'base' ? undefined : dtype) as any,
         });
     }
