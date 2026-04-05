@@ -16,10 +16,7 @@ export class AudioPlaybackService {
     // [OPTIMIZATION: GAPLESS PLAYBACK]
     // Double-buffering architecture. While one audio element plays,
     // the inactive one can decode the next file in the background.
-    private channels: AudioChannel[] = [
-        { audio: new Audio(), url: null, hash: null },
-        { audio: new Audio(), url: null, hash: null }
-    ];
+    private channels: AudioChannel[];
     private activeIndex = 0;
 
     private get active() { return this.channels[this.activeIndex]; }
@@ -31,8 +28,21 @@ export class AudioPlaybackService {
     private onStateChange: ((state: PlaybackState) => void) | null = null;
 
     constructor() {
-        // Attach identical listeners to both channels, but strictly gate their
-        // dispatches so the UI only reacts to the currently active channel.
+        /**
+         * [ARCHITECTURE: TEST STABILITY]
+         * Initialize channels inside constructor to avoid ReferenceErrors during
+         * module collection in Node/Vitest environments.
+         */
+        const createChannel = (): AudioChannel => ({
+            audio: typeof Audio !== 'undefined' ? new Audio() : {} as HTMLAudioElement,
+            url: null,
+            hash: null
+        });
+
+        this.channels = [createChannel(), createChannel()];
+
+        // Only attach listeners if the browser environment is valid
+        if (typeof Audio !== 'undefined') {
         this.channels.forEach((channel, index) => {
             const { audio } = channel;
 
@@ -62,6 +72,7 @@ export class AudioPlaybackService {
             });
         });
     }
+    }
 
     public bind(
         onProgress: (c: number, d: number) => void,
@@ -78,6 +89,7 @@ export class AudioPlaybackService {
     }
 
     public async playChunk(hash: string, blob: Blob, rate: number = 1.0) {
+        if (typeof Audio === 'undefined') return;
         try {
             if (blob.size === 0) throw new Error("Empty audio blob");
 
@@ -131,28 +143,28 @@ export class AudioPlaybackService {
      * browser can decode the file while the current chunk is still playing.
      */
     public preloadChunk(hash: string, blob: Blob) {
+        if (typeof Audio === 'undefined') return;
         try {
-            if (this.inactive.hash === hash) return; // Already ready
-            if (this.active.hash === hash) return;   // Currently playing
-
+            if (this.inactive.hash === hash) return;
+            if (this.active.hash === hash) return;
             if (this.inactive.url) URL.revokeObjectURL(this.inactive.url);
-
             this.inactive.url = URL.createObjectURL(blob);
             this.inactive.hash = hash;
-
             this.inactive.audio.src = this.inactive.url;
-            this.inactive.audio.load(); // Forces background metadata parse/decode
+            this.inactive.audio.load();
         } catch (e) {
             logger.warn('AudioPlayback', 'Failed to preload chunk', e);
         }
     }
 
     public setRate(rate: number) {
+        if (typeof Audio === 'undefined') return;
         this.active.audio.defaultPlaybackRate = rate;
         this.active.audio.playbackRate = rate;
     }
 
     public toggle() {
+        if (typeof Audio === 'undefined') return;
         if (this.active.audio.paused) {
             if (this.active.audio.src) this.active.audio.play();
         } else {
@@ -161,6 +173,7 @@ export class AudioPlaybackService {
     }
 
     public stop() {
+        if (typeof Audio === 'undefined') return;
         this.active.audio.pause();
         this.active.audio.currentTime = 0;
         this.onStateChange?.(PlaybackState.IDLE);

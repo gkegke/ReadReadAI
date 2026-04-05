@@ -1,13 +1,15 @@
 import React from 'react';
 import { useAudioStore } from '../../../shared/store/useAudioStore';
 import { useProjectStore } from '../../../shared/store/useProjectStore';
+import { useUIStore } from '../../../shared/store/useUIStore';
 import { useProjectChunkIds } from '../../../shared/hooks/useQueries';
-import { Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { Play, Pause, SkipBack, SkipForward, ChevronDown, Music2, Activity } from 'lucide-react';
 import { cn } from '../../../shared/lib/utils';
 
 export const PlayerControls: React.FC = () => {
-  const { isPlaying, togglePlay, activeChunkId, skipToChunk, playbackSpeed, setPlaybackSpeed, currentTime, duration } = useAudioStore();
+  const { isPlaying, togglePlay, activeChunkId, skipToChunk, playbackRate, setPlaybackSpeed, currentTime, duration } = useAudioStore();
   const { activeProjectId } = useProjectStore();
+  const { isPlayerOpen, togglePlayer } = useUIStore();
 
   const { data: chunkIds } = useProjectChunkIds(activeProjectId);
 
@@ -23,7 +25,7 @@ export const PlayerControls: React.FC = () => {
 
   const toggleSpeed = () => {
       const speeds = [1.0, 1.25, 1.5, 2.0, 0.75];
-      const idx = speeds.indexOf(playbackSpeed);
+      const idx = speeds.indexOf(playbackRate);
       setPlaybackSpeed(speeds[(idx + 1) % speeds.length]);
   };
 
@@ -33,8 +35,44 @@ export const PlayerControls: React.FC = () => {
       return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl glass-panel rounded-3xl p-4 shadow-2xl border border-white/10 z-50">
+      return (
+    <div className={cn(
+        "fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-50 transition-all duration-700 ease-in-out",
+        isPlayerOpen ? "pb-6" : "translate-y-[calc(100%-0px)] hover:translate-y-[calc(100%-10px)]"
+    )}>
+        {/* --- MINIMIZED PEEK TAB --- */}
+        {!isPlayerOpen && (
+            <div
+            onClick={togglePlayer}
+                className="mx-auto w-40 h-3 flex flex-col items-center justify-start cursor-pointer group"
+            >
+                <div className="w-12 h-1 bg-primary/20 rounded-full group-hover:bg-primary/50 transition-colors" />
+                <div className="mt-2 bg-primary text-primary-foreground px-3 py-1.5 rounded-t-xl flex items-center gap-2 border-x border-t border-white/10">
+                    {isPlaying ? (
+                        <Activity className="w-3 h-3 animate-pulse text-green-400" />
+                    ) : (
+                        <Music2 className="w-3 h-3" />
+                    )}
+                    <span className="text-[9px] font-black uppercase tracking-tighter">
+                        {isPlaying ? "Playing" : "Paused"}
+                  </span>
+              </div>
+            </div>
+        )}
+
+        <div className={cn(
+            "glass-panel rounded-3xl p-4 shadow-[0_-5px_100px_rgba(0,0,0,0.1)] border border-white/10 relative overflow-hidden transition-opacity duration-500",
+            !isPlayerOpen ? "opacity-20 pointer-events-none" : "opacity-100"
+        )}>
+            {/* Minimize Button - Now using a clearer "Down" intent */}
+        <button
+            onClick={togglePlayer}
+                className="absolute top-2 right-4 p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-full transition-all"
+                title="Minimize Console"
+        >
+                <ChevronDown className="w-5 h-5" strokeWidth={3} />
+        </button>
+
       <div className="flex items-center justify-between mb-4 px-2">
           <div className="flex flex-col min-w-[140px]">
               <span className="text-[9px] font-black text-muted-foreground uppercase tracking-[0.2em]">Timeline</span>
@@ -65,7 +103,7 @@ export const PlayerControls: React.FC = () => {
           </div>
 
           <div className="flex items-center justify-end min-w-[140px]">
-              <button title="Playback Speed" onClick={toggleSpeed} className="text-[10px] font-black tracking-widest bg-primary/5 hover:bg-primary/10 px-4 py-1.5 rounded-full transition-colors">{playbackSpeed}X</button>
+              <button title="Playback Speed" onClick={toggleSpeed} className="text-[10px] font-black tracking-widest bg-primary/5 hover:bg-primary/10 px-4 py-1.5 rounded-full transition-colors">{playbackRate}X</button>
           </div>
       </div>
 
@@ -79,6 +117,7 @@ export const PlayerControls: React.FC = () => {
           </div>
           <span className="text-[10px] font-mono opacity-40">{formatTime(duration)}</span>
       </div>
+    </div>
     </div>
   );
 };

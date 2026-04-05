@@ -13,7 +13,7 @@ import { cn } from '../../../shared/lib/utils';
 export const VoiceSelector: React.FC = () => {
     const { availableVoices } = useTTSStore();
     const { activeProjectId } = useProjectStore();
-    const { hiddenChapters } = useUIStore();
+    const { userToggledChapters } = useUIStore();
     const { data: chunks = [] } = useProjectChunks(activeProjectId);
     const { mutate: regenerate, isPending } = useRegenerateChunksMutation();
 
@@ -29,7 +29,9 @@ export const VoiceSelector: React.FC = () => {
         let currentChapterId = "start";
         const visibleIds = chunks.filter(c => {
             if (c.role === 'heading') currentChapterId = String(c.id);
-            return !hiddenChapters[currentChapterId];
+            // Chapters are visible unless explicitly set to false in userToggledChapters
+            const isVisible = userToggledChapters[currentChapterId] !== false;
+            return isVisible;
         }).map(c => c.id!);
 
         if (visibleIds.length > 0 && window.confirm(`Regenerate all ${visibleIds.length} visible blocks?`)) {
